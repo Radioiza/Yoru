@@ -824,10 +824,18 @@ export default function RegistroIdentidad({ pantallaInicial = 'inicio', onSalir 
                   )}
 
                   <button
-                    onClick={() => setPantallaActual('reto')}
+                    onClick={() => {
+                      // Limpiamos la llave que quedo en memoria al generarla.
+                      // El usuario debe cargar el archivo .json que acaba de
+                      // descargar — asi confirmamos que lo guardo bien y usa
+                      // el mismo flujo manual que los usuarios recurrentes.
+                      privateKeyRef.current = null;
+                      setLlaveCargada(null);
+                      setPantallaActual('login');
+                    }}
                     className="bg-[#591f96] text-white py-3 px-8 rounded-full font-bold text-sm hover:bg-[#3a1366] transition-all shadow-lg w-full max-w-sm"
                   >
-                    Ya la guardé → Continuar al Reto
+                    Ya la guardé → Iniciar sesión con mi llave
                   </button>
                 </div>
               )}
