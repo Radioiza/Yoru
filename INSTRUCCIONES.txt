@@ -1,0 +1,302 @@
+================================================================
+  YORU - INSTRUCCIONES PARA LEVANTAR TODO EL SISTEMA
+================================================================
+
+Necesitas tener instalado:
+  - Docker Desktop (corriendo, ícono de ballena en la barra)
+  - Node.js 20 o superior
+  - Python 3.8+ (opcional, solo para el script automático)
+
+
+================================================================
+  MÉTODO RÁPIDO (RECOMENDADO) - UN SOLO COMANDO
+================================================================
+
+Si tienes Python instalado (viene preinstalado en Windows 11):
+
+  Opción A: Doble-click al archivo "Iniciar Yoru.bat"
+
+  Opción B: Desde PowerShell:
+            cd C:\Users\carlo\OneDrive\Escritorio\index_tuto
+            python iniciar.py
+
+El script hace TODO automáticamente:
+  1. Verifica Docker y Node
+  2. Levanta los 6 contenedores (Postgres x4, RabbitMQ, MinIO)
+  3. Espera a que las BDs respondan en su puerto
+  4. La primera vez: npm install + prisma db push en cada servicio
+  5. Las siguientes veces: si cambias el schema, db push lo aplica
+     automáticamente (no tienes que correr migraciones a mano)
+  6. Abre 6 ventanas de PowerShell (1 por microservicio + frontend)
+  7. Abre el navegador en http://localhost:5173
+
+NOTA: si después de un cambio de schema sigues viendo errores como
+"Column X does not exist", ejecuta:
+  python iniciar.py --stop
+  python iniciar.py
+La segunda vuelta aplica el schema actualizado a la BD.
+
+Para detener todo:
+  - Doble-click "Detener Yoru.bat", o
+  - python iniciar.py --stop
+
+
+================================================================
+  MÉTODO MANUAL (POR SI EL SCRIPT FALLA)
+================================================================
+
+================================================================
+  RUTA RAÍZ DEL PROYECTO
+================================================================
+
+C:\Users\carlo\OneDrive\Escritorio\index_tuto
+
+Dentro hay 2 carpetas:
+  - yoru-backend       (los 4 microservicios + docker)
+  - registro\registro  (el frontend React)
+
+
+================================================================
+  PASO 1 — ASEGURAR QUE DOCKER DESKTOP ESTÉ CORRIENDO
+================================================================
+
+Abre Docker Desktop desde el menú de inicio. Espera a que el
+ícono de la ballena en la barra de tareas deje de animarse.
+
+Verifica desde PowerShell:
+
+  docker --version
+  docker compose version
+
+Si te da errores, abre Docker Desktop y vuelve a intentar.
+
+
+================================================================
+  PASO 2 — LEVANTAR LA INFRAESTRUCTURA (Postgres x4 + RabbitMQ + MinIO)
+================================================================
+
+Abre PowerShell y corre:
+
+  cd C:\Users\carlo\OneDrive\Escritorio\index_tuto\yoru-backend
+  docker compose up -d
+
+Verifica que los 6 contenedores estén arriba:
+
+  docker compose ps
+
+Debes ver:
+  yoru-auth-db      (puerto 5433)
+  yoru-pki-db       (puerto 5434)
+  yoru-kyc-db       (puerto 5435)
+  yoru-telecom-db   (puerto 5436)
+  yoru-rabbitmq     (puerto 5672, UI en 15672)
+  yoru-minio        (puerto 9000, UI en 9001)
+
+Todos deben decir "running" o "healthy".
+
+
+================================================================
+  PASO 3 — ARRANCAR LOS 5 MICROSERVICIOS
+================================================================
+
+Necesitas 5 TERMINALES POWERSHELL ABIERTAS EN PARALELO.
+Una por servicio. Cada terminal se queda viva mientras trabajas.
+
+----------------------------------------------------------------
+  TERMINAL 1 — AUTH SERVICE (puerto 3001)
+----------------------------------------------------------------
+
+  cd C:\Users\carlo\OneDrive\Escritorio\index_tuto\yoru-backend\services\auth-service
+  npm run dev
+
+----------------------------------------------------------------
+  TERMINAL 2 — PKI SERVICE (puerto 3002)
+----------------------------------------------------------------
+
+  cd C:\Users\carlo\OneDrive\Escritorio\index_tuto\yoru-backend\services\pki-service
+  npm run dev
+
+----------------------------------------------------------------
+  TERMINAL 3 — KYC SERVICE (puerto 3003)
+----------------------------------------------------------------
+
+  cd C:\Users\carlo\OneDrive\Escritorio\index_tuto\yoru-backend\services\kyc-service
+  npm run dev
+
+----------------------------------------------------------------
+  TERMINAL 4 — TELECOM SERVICE (puerto 3004)
+----------------------------------------------------------------
+
+  cd C:\Users\carlo\OneDrive\Escritorio\index_tuto\yoru-backend\services\telecom-service
+  npm run dev
+
+----------------------------------------------------------------
+  TERMINAL 5 — NOTIFICATION SERVICE (puerto 3005)
+----------------------------------------------------------------
+
+  cd C:\Users\carlo\OneDrive\Escritorio\index_tuto\yoru-backend\services\notification-service
+  npm install
+  npm run dev
+
+  (npm install solo la primera vez. Este servicio no tiene BD,
+  por eso no hay "prisma migrate".)
+
+
+En cada terminal debes ver al final un mensaje tipo:
+
+  {"msg":"<servicio> escuchando en http://0.0.0.0:300X"}
+  [broker] conectado a RabbitMQ
+
+
+================================================================
+  PASO 4 — ARRANCAR EL FRONTEND REACT
+================================================================
+
+Abre una SEXTA terminal:
+
+  cd C:\Users\carlo\OneDrive\Escritorio\index_tuto\registro\registro
+  npm run dev
+
+Vite te mostrará una URL, normalmente:
+
+  http://localhost:5173
+
+Abre esa URL en Brave o Chrome.
+
+
+================================================================
+  PASO 5 — PROBAR EL FLUJO COMPLETO
+================================================================
+
+En la página web:
+
+  1. Pantalla Inicio -> botón "Registrarme"
+  2. Formulario -> ingresa:
+       Teléfono: 10 dígitos numéricos
+       CURP: 18 caracteres (ej. EAZJ031021HMCSXNA5)
+     Botón "Continuar"
+  3. Biometría:
+       - Sube un PDF cualquiera como INE
+       - Activa la cámara, toma una selfie
+       - Botón "Continuar"
+  4. Generación: botón "Generar mi Identidad Local"
+  5. Botón "Continuar al Reto de Firma"
+  6. Reto: botón "Firmar el reto"
+     -> debe aparecer "Firma verificada con éxito" en verde
+
+
+IMPORTANTE: cada vez que pruebes, usa un teléfono y CURP
+diferentes, porque los anteriores quedaron guardados en la BD
+y darán error 409 (duplicado).
+
+
+================================================================
+  PASO 6 — VERIFICAR QUE TODO SE GUARDÓ (opcional)
+================================================================
+
+Para inspeccionar las BDs visualmente, abre Prisma Studio
+en cada servicio (en una terminal nueva o cualquiera libre):
+
+  cd C:\Users\carlo\OneDrive\Escritorio\index_tuto\yoru-backend\services\auth-service
+  npx prisma studio
+
+Se abre en http://localhost:5555
+
+Repite para pki-service, kyc-service, telecom-service.
+Cada uno usará un puerto distinto (5556, 5557, 5558).
+
+Para ver los eventos de RabbitMQ:
+
+  Abre http://localhost:15672
+  Usuario: yoru
+  Contraseña: yoru_dev
+
+
+================================================================
+  PARA DETENER TODO
+================================================================
+
+  1. En cada terminal de los servicios y del frontend: Ctrl + C
+  2. Para detener Docker:
+       cd C:\Users\carlo\OneDrive\Escritorio\index_tuto\yoru-backend
+       docker compose down
+     (Los datos se conservan en los volúmenes.)
+
+  Para borrar TODO incluidas las BDs (empezar de cero):
+       docker compose down -v
+
+
+================================================================
+  RESUMEN DE PUERTOS
+================================================================
+
+  Frontend React          http://localhost:5173
+  auth-service            http://localhost:3001
+  pki-service             http://localhost:3002
+  kyc-service             http://localhost:3003
+  telecom-service         http://localhost:3004
+  notification-service    http://localhost:3005
+
+  Prisma Studio (auth)    http://localhost:5555
+  Prisma Studio (pki)     http://localhost:5556
+  Prisma Studio (kyc)     http://localhost:5557
+  Prisma Studio (telecom) http://localhost:5558
+  RabbitMQ UI             http://localhost:15672  (yoru / yoru_dev)
+  MinIO UI                http://localhost:9001   (yoru / yoru_dev_minio)
+  Prisma Studio (auth)    http://localhost:5555
+  Postgres auth           localhost:5433
+  Postgres pki            localhost:5434
+  Postgres kyc            localhost:5435
+  Postgres telecom        localhost:5436
+
+
+================================================================
+  PROBLEMAS COMUNES
+================================================================
+
+* "Failed to fetch" en el frontend
+  -> El servicio backend correspondiente NO está corriendo.
+     Revisa que tengas las 4 terminales activas con "npm run dev".
+
+* "Can't reach database server at localhost:54XX"
+  -> Docker no está corriendo o los contenedores se cayeron.
+     Vuelve al PASO 2.
+
+* "docker: El término 'docker' no se reconoce"
+  -> Docker Desktop no está instalado o no está en el PATH.
+     Abre Docker Desktop primero. Si lo acabas de instalar,
+     reinicia la PowerShell para que herede el PATH.
+
+* npm install falla con EPERM en system32
+  -> Te quedaste en C:\WINDOWS\system32. Asegúrate de hacer
+     "cd" a la carpeta correcta ANTES de cualquier npm.
+
+* Cámara bloqueada en Brave
+  -> Clic en el ícono de candado de la URL -> Cámara -> Permitir
+     o ve a brave://settings/content/camera
+
+* "Ya existe un registro con este valor" (409)
+  -> Usa otro teléfono y CURP, o limpia la BD desde Prisma Studio.
+
+
+================================================================
+  EN QUÉ ÍBAMOS
+================================================================
+
+Completado:
+  [x] 4 microservicios (auth, pki, kyc, telecom) con sus BDs
+  [x] RabbitMQ + eventos publicados y consumidos
+  [x] Frontend React con 6 pantallas:
+      inicio -> formulario -> biometría -> generación -> reto -> cuenta
+  [x] Flujo de registro completo end-to-end
+  [x] Reto de firma ECDSA P-256 funcionando
+  [x] notification-service (consume todos los eventos, sin BD)
+  [x] IndexedDB: llave privada no-extractable persistida en navegador
+  [x] JWT: login real con verificación de firma, middleware en 3 servicios
+  [x] Pantalla "Mi Cuenta" con kill switch / desbloquear / revocar llave
+  [x] MinIO uploads reales: presigned URLs, PUT directo desde navegador
+
+Pendientes (en orden recomendado):
+  [ ] Wire de las pantallas Home.jsx y Tutorial.jsx con Router.jsx
+  [ ] WebAuthn / biometría del navegador para desbloquear la llave
+  [ ] Revisar UI de KYC: ver documentos subidos (download-url endpoint)

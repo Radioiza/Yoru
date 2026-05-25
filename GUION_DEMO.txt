@@ -1,0 +1,416 @@
+================================================================
+  YORU - GUIÓN DE DEMOSTRACIÓN EN VIVO
+================================================================
+
+  Duración estimada: 15-20 minutos
+  Audiencia: profesor / sinodales / clase
+
+================================================================
+  ANTES DE EMPEZAR (5 MIN ANTES DE LA PRESENTACIÓN)
+================================================================
+
+1. Abre Docker Desktop y verifica que esté corriendo.
+
+2. Abre PowerShell y levanta el stack:
+
+   cd C:\Users\carlo\OneDrive\Escritorio\index_tuto\yoru-backend
+   docker compose up -d
+   docker compose ps     (verifica que los 6 contenedores estén "running")
+
+3. Abre 6 terminales PowerShell. En cada una:
+
+   Terminal 1: cd ...\auth-service          → npm run dev
+   Terminal 2: cd ...\pki-service           → npm run dev
+   Terminal 3: cd ...\kyc-service           → npm run dev
+   Terminal 4: cd ...\telecom-service       → npm run dev
+   Terminal 5: cd ...\notification-service  → npm run dev
+   Terminal 6: cd ...\registro\registro     → npm run dev
+
+   (Las rutas completas están en INSTRUCCIONES.txt)
+
+4. Abre 4 pestañas en el navegador:
+
+   Pestaña 1:  http://localhost:5173            (frontend)
+   Pestaña 2:  http://localhost:15672           (RabbitMQ, login yoru/yoru_dev)
+   Pestaña 3:  http://localhost:9001            (MinIO, login yoru/yoru_dev_minio)
+   Pestaña 4:  reserva (Prisma Studio cuando lo abras)
+
+5. Acomoda las ventanas para que se vea:
+   - El navegador (frontend) ocupando la mitad de la pantalla
+   - La terminal del notification-service visible al lado
+   (Así durante la demo se ve la UI y los eventos al mismo tiempo)
+
+
+================================================================
+  ESTRUCTURA DE LA DEMOSTRACIÓN
+================================================================
+
+  PARTE 1: Tour de arquitectura          (3 min)
+  PARTE 2: Registro de usuario nuevo     (4 min)
+  PARTE 3: Generación de identidad       (3 min)
+  PARTE 4: Login criptográfico           (2 min)
+  PARTE 5: Acciones autenticadas         (3 min)
+  PARTE 6: Kill switch automático        (3 min)
+  PARTE 7: Cierre y preguntas            (2 min)
+
+
+================================================================
+  PARTE 1 — TOUR DE ARQUITECTURA (3 MIN)
+================================================================
+
+LO QUE DICES:
+"Yoru es un sistema de identidad digital para usuarios de
+telefonía móvil. Está construido como microservicios para que
+cada responsabilidad esté aislada. Vamos a ver los componentes."
+
+LO QUE MUESTRAS:
+
+a) El diagrama de arquitectura (proyéctalo o ten un PDF).
+   Explica brevemente:
+   - 5 microservicios independientes
+   - Cada uno con su propia base de datos
+   - Se comunican por HTTP (consultas) o eventos (notificaciones)
+   - Un broker (RabbitMQ) desacopla a los servicios entre sí
+
+b) Cambia a las terminales y muestra que los 5 servicios
+   están corriendo. Señala los puertos:
+   3001 auth, 3002 pki, 3003 kyc, 3004 telecom, 3005 notification
+
+c) Abre RabbitMQ (http://localhost:15672):
+   - Ve a "Exchanges" → muestra el exchange "yoru.events"
+   - Ve a "Queues" → muestra las colas (telecom.queue, notification.queue)
+   - Di: "Esto es el sistema nervioso del sistema. Ahora mismo
+     está vacío. Vamos a generar eventos."
+
+d) Abre MinIO (http://localhost:9001):
+   - Muestra el bucket "kyc-documents" (vacío)
+   - Di: "Aquí vivirán los documentos de identidad de los usuarios."
+
+
+================================================================
+  PARTE 2 — REGISTRO DE USUARIO NUEVO (4 MIN)
+================================================================
+
+LO QUE DICES:
+"Vamos a registrar un usuario nuevo. Verán cómo cada paso del
+flujo dispara una acción en un microservicio distinto."
+
+LO QUE MUESTRAS:
+
+a) En el frontend (localhost:5173):
+   - Pantalla de inicio → clic en "Registrarme"
+
+b) Formulario:
+   - Teléfono: usa un número de 10 dígitos (5512345678 funciona,
+     pero usa uno nuevo cada vez que pruebes)
+   - CURP: usa uno válido (puedes usar el tuyo)
+   - Clic en "Continuar"
+
+   EXPLICA: "Lo que acaba de pasar es: el frontend mandó un POST
+   al auth-service. Ese servicio validó el formato del CURP y el
+   teléfono, los buscó en su BD para asegurar que no existían, y
+   creó una fila nueva. Luego publicó el evento auth.user_created
+   en el broker."
+
+   MUESTRA: ve a la terminal del notification-service. Verás:
+
+      ──── ℹ️ INFO [EMAIL] auth.user_created ────
+      Asunto: ¡Bienvenido a Yoru!
+      ...
+
+   Di: "El notification-service estaba escuchando ese evento y
+   generó un correo de bienvenida. En producción esto se mandaría
+   por SMTP de verdad."
+
+c) Pantalla de biometría:
+   - Sube cualquier PDF como INE (uno pequeño)
+   - Activa la cámara, toma una selfie
+   - Clic en "Continuar"
+
+   EXPLICA: "Tres cosas pasan en paralelo:
+   1. El cliente pidió presigned URLs al kyc-service.
+   2. El navegador SUBIÓ los archivos DIRECTO a MinIO, sin pasar
+      por nuestro backend. Eso es importante en producción para
+      escalar.
+   3. Luego se creó la solicitud KYC y se aprobó automáticamente
+      (en producción esto lo haría un revisor humano o un servicio
+      de match facial)."
+
+   MUESTRA en MinIO:
+   - Ve a Buckets → kyc-documents
+   - Aparecen las carpetas ine/ y selfies/ con tus archivos
+   - Abre el PDF para mostrar que sí se subió
+
+   MUESTRA en notification-service:
+   - Aparece "[EMAIL] kyc.completed - ✅ Tu identidad fue verificada"
+
+
+================================================================
+  PARTE 3 — GENERACIÓN DE IDENTIDAD (3 MIN)
+================================================================
+
+LO QUE DICES:
+"Aquí está la parte criptográfica. Vamos a generar un par de
+llaves ECDSA P-256 dentro del navegador. La llave privada nunca
+va a salir de tu dispositivo."
+
+LO QUE MUESTRAS:
+
+a) Pantalla de generación:
+   - Clic en "Generar mi Identidad Local"
+
+   EXPLICA:
+   - "El navegador acaba de generar localmente un par de llaves
+     usando Web Crypto API, que es estándar W3C."
+   - "ECDSA P-256 con SHA-256 es el mismo algoritmo que usan los
+     pasaportes electrónicos y FIDO2."
+   - "La llave PÚBLICA se exportó a formato PEM y se mandó al
+     PKI service. La llave PRIVADA se re-importó como
+     extractable:false y se guardó en IndexedDB."
+   - "Después se vinculó la línea telefónica en el telecom-service."
+
+b) Abre la consola del navegador (F12) → pestaña "Application"
+   → IndexedDB → yoru-identity → identities:
+   - Muestra el registro guardado
+   - Click en privateKey → muestra que extractable: false
+   Di: "Ni siquiera mi propio JavaScript puede leer esta llave.
+   Solo Web Crypto puede usarla para firmar."
+
+c) MUESTRA en notification-service: "🔐 Nueva llave criptográfica
+   registrada".
+
+
+================================================================
+  PARTE 4 — LOGIN CRIPTOGRÁFICO (2 MIN)
+================================================================
+
+LO QUE DICES:
+"Ahora vamos a demostrar autenticación SIN contraseñas. El
+sistema le pide al cliente que firme un reto único."
+
+LO QUE MUESTRAS:
+
+a) Clic en "Continuar al Reto de Firma".
+b) Aparece la pantalla "Reto de Firma Digital".
+c) Clic en "Firmar el reto".
+d) Aparece el nonce recibido en la pantalla.
+
+   EXPLICA: "Lo que pasó:
+   1. El frontend pidió un nonce al auth-service.
+   2. El frontend firmó ese nonce con la llave privada del
+      navegador.
+   3. Mandó la firma al auth-service.
+   4. Auth llamó internamente al PKI service para verificar la
+      firma con la llave pública guardada.
+   5. PKI dijo 'firma válida'.
+   6. Auth marcó el nonce como usado (anti-replay) y emitió un
+      JWT firmado con HS256 válido por 1 hora.
+
+   Esto es lo mismo que hacen los Yubikeys, Passkeys de Apple, y
+   los sistemas FIDO2/WebAuthn."
+
+e) MUESTRA mensaje verde: "Sesión iniciada".
+
+
+================================================================
+  PARTE 5 — ACCIONES AUTENTICADAS (3 MIN)
+================================================================
+
+LO QUE DICES:
+"El JWT da acceso a operaciones sensibles. Vamos a ver."
+
+LO QUE MUESTRAS:
+
+a) Clic en "Ver mi cuenta →".
+b) Aparece la pantalla con info del usuario y de la línea.
+   Señala el estado "ACTIVA".
+
+c) Clic en "Activar Kill Switch" → confirmar.
+
+   EXPLICA: "Esto es para casos de emergencia. Si te roban el
+   teléfono, puedes congelar tu línea inmediatamente.
+
+   Lo que pasó:
+   1. El frontend mandó POST con el Bearer token.
+   2. El telecom-service validó el JWT con el secreto compartido.
+   3. Verificó que el userId del token coincide con el dueño de
+      la línea (autorización, no solo autenticación).
+   4. Cambió el estado a kill_switched.
+   5. Publicó el evento telecom.kill_switch_activado."
+
+   MUESTRA:
+   - Estado pasa a "KILL_SWITCHED" en rojo
+   - Evento nuevo en el historial
+   - En notification-service: "🚨 CRITICAL [SMS] Tu línea fue
+     bloqueada"
+
+d) Clic en "Desbloquear línea" → vuelve a estado activa.
+
+
+================================================================
+  PARTE 6 — KILL SWITCH AUTOMÁTICO (3 MIN — LA PARTE MÁS COOL)
+================================================================
+
+LO QUE DICES:
+"Y este es el escenario más interesante. ¿Qué pasa si un
+atacante consigue tus credenciales y trata de registrar SU llave
+en tu cuenta? El sistema lo detecta y dispara un kill switch
+automático."
+
+LO QUE MUESTRAS:
+
+a) En el frontend, clic en "Cerrar sesión".
+b) En el inicio, clic en "Olvidar identidad" para la sesión que
+   acabas de crear (simula que perdiste la llave).
+c) Vuelve al registro CON EL MISMO TELÉFONO Y CURP de antes.
+
+   (NOTA: dará error 409 porque ya existe. Para la demo, mejor
+   prepara un segundo registro completo de antemano y muéstralo
+   directamente.)
+
+ALTERNATIVA MÁS LIMPIA:
+   En vez de re-registrar, abre un curl en otra terminal y
+   simula que un atacante intenta registrar una llave NUEVA para
+   un usuario que ya tiene una:
+
+      curl.exe -X POST http://localhost:3002/api/pki/keys `
+        -H "Content-Type: application/json" `
+        -d '{\"userId\":\"<userId-del-usuario>\",\"publicKeyPem\":\"-----BEGIN PUBLIC KEY-----\\nFAKE\\n-----END PUBLIC KEY-----\"}'
+
+   MUESTRA en notification-service:
+   - "🚨 CRITICAL [EMAIL] ALERTA: Intento de registrar nueva
+     llave"
+   - "🚨 CRITICAL [SMS] Tu línea fue bloqueada"
+
+   EXPLICA: "Lo que acaba de pasar:
+   1. PKI detectó que ya había una llave activa para ese userId.
+   2. Publicó el evento pki.new_key_attempt.
+   3. El telecom-service estaba suscrito a ese evento.
+   4. Aplicó kill switch automático sobre la línea.
+   5. El notification-service también recibió el evento y mandó
+      alertas al usuario.
+
+   Todo eso pasó sin ningún servicio llamando a otro
+   directamente. Solo eventos. Eso es lo que hace que la
+   arquitectura sea escalable."
+
+
+================================================================
+  PARTE 7 — CIERRE (2 MIN)
+================================================================
+
+LO QUE DICES:
+"Para cerrar, déjenme resumir las decisiones técnicas más
+importantes:
+
+1. Microservicios con base de datos por servicio. Cada uno puede
+   desplegarse y escalar de forma independiente.
+
+2. Bus de eventos asíncrono (RabbitMQ). Los servicios no se
+   acoplan entre sí: publican lo que les pasa y otros se
+   suscriben.
+
+3. Criptografía del lado del cliente. La llave privada nunca
+   sale del navegador del usuario, y se guarda en IndexedDB con
+   extractable:false. Ni el sistema mismo puede leerla.
+
+4. Autenticación sin contraseñas usando ECDSA P-256, el mismo
+   estándar que FIDO2 y Passkeys de Apple.
+
+5. JWT para sesiones autenticadas con verificación distribuida
+   en cada servicio.
+
+6. Storage S3-compatible (MinIO) con presigned URLs para que el
+   navegador suba archivos directo, sin saturar nuestro backend.
+
+7. Total: 5 servicios, 4 bases de datos, 1 broker, 1 storage,
+   y un frontend que cubre todo el flujo desde registro hasta
+   uso autenticado."
+
+ABRE A PREGUNTAS.
+
+
+================================================================
+  PREGUNTAS QUE TE PUEDEN HACER (Y CÓMO RESPONDER)
+================================================================
+
+P: ¿Por qué microservicios y no un monolito?
+R: Para esta escala probablemente un monolito sería suficiente.
+   Microservicios tiene sentido cuando los equipos crecen y cada
+   dominio (auth, kyc, telecom) puede tener un equipo distinto.
+   Aquí lo usamos para demostrar el patrón.
+
+P: ¿Por qué ECDSA y no RSA?
+R: Llaves más pequeñas (256 bits vs 2048 bits) y firmas más
+   rápidas. Es el estándar moderno: TLS 1.3, certificados de
+   Let's Encrypt, FIDO2 y Passkeys lo usan.
+
+P: ¿Qué pasa si pierdo el navegador?
+R: La llave privada se pierde. Necesitarías regenerar identidad
+   (re-hacer KYC) o tener un mecanismo de recovery (no
+   implementado aquí). En producción se usaría WebAuthn con
+   biometría hardware-backed.
+
+P: ¿Y el API Gateway que aparece en el diagrama?
+R: En el diagrama original aparece pero no lo implementé porque
+   en local con docker-compose no hace falta. En producción
+   pondría Kong, Traefik o nginx para centralizar rate limiting,
+   autenticación, logging y CORS.
+
+P: ¿Por qué guardar la llave privada en IndexedDB y no en
+   localStorage?
+R: localStorage solo guarda strings, así que tendría que
+   exportar la llave a JWK como texto plano. IndexedDB guarda
+   objetos CryptoKey nativamente, y con extractable:false la
+   llave nunca puede ser leída como texto plano, ni siquiera por
+   mi propio JavaScript.
+
+P: ¿Es seguro contra XSS?
+R: Mejor que localStorage pero no inmune. Un XSS aún puede pedir
+   al navegador que firme cosas con la llave (porque el JS puede
+   usar la llave aunque no leerla). La defensa real es CSP
+   estricto. Mejorarlo con WebAuthn agregaría unlock biométrico.
+
+P: ¿Cuánto te tardó?
+R: [tu respuesta honesta]
+
+P: ¿Qué le agregarías?
+R: API Gateway, tests automatizados, métricas con Prometheus,
+   monitoring distribuido (OpenTelemetry), refresh tokens, y
+   WebAuthn para autenticación basada en hardware.
+
+
+================================================================
+  CHECKLIST FINAL ANTES DE PRESENTAR
+================================================================
+
+[ ] Docker corriendo
+[ ] 5 microservicios corriendo (verifica con /health en cada uno)
+[ ] Frontend corriendo
+[ ] RabbitMQ UI abierta y accesible
+[ ] MinIO UI abierta y accesible
+[ ] Tu propio usuario de prueba YA REGISTRADO antes de empezar
+    (así puedes mostrar "Reanudar sesión" en vez de re-hacer el
+     flujo completo, que toma tiempo)
+[ ] El INSTRUCCIONES.txt impreso o accesible por si algo falla
+[ ] Internet (por si Docker necesita descargar algo)
+
+
+================================================================
+  PLAN B SI ALGO SE ROMPE EN VIVO
+================================================================
+
+* Si el frontend no carga: verifica que Vite esté corriendo
+  (npm run dev en registro/registro). URL: localhost:5173.
+
+* Si "Failed to fetch": revisa que las 5 terminales de los
+  servicios estén abiertas y muestren "escuchando en puerto X".
+
+* Si Docker se cayó: docker compose down && docker compose up -d
+
+* Si nada funciona: enseña los archivos de código y explica la
+  arquitectura desde el editor. Los profesores valoran que
+  conozcas tu código.
+
+* SIEMPRE TEN UN VIDEO DE RESPALDO con el flujo grabado, por si
+  algo se rompe. Grábalo con Xbox Game Bar (Win+G) un día antes.

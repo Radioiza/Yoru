@@ -1,0 +1,37 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model PublicKey {
+  id           String   @id @default(uuid())
+  userId       String   @map("user_id")
+  publicKeyPem String   @map("public_key_pem") @db.Text
+  curva        String   @default("P-256")
+  revocada     Boolean  @default(false)
+  createdAt    DateTime @default(now()) @map("created_at")
+  revokedAt    DateTime? @map("revoked_at")
+
+  signatures Signature[]
+
+  @@index([userId])
+  @@map("public_keys")
+}
+
+model Signature {
+  id           String   @id @default(uuid())
+  publicKeyId  String   @map("public_key_id")
+  challengeId  String?  @map("challenge_id")
+  payloadHash  String   @map("payload_hash")
+  resultado    String                            // valida | invalida
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  publicKey PublicKey @relation(fields: [publicKeyId], references: [id], onDelete: Cascade)
+
+  @@index([publicKeyId])
+  @@map("signatures")
+}

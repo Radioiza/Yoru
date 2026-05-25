@@ -1,0 +1,43 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Linea {
+  id               String       @id @default(uuid())
+  telefono         String       @unique
+  userId           String       @map("user_id")
+  publicKeyId      String?      @map("public_key_id")
+  estado           EstadoLinea  @default(vinculada)
+  fechaVinculacion DateTime     @default(now()) @map("fecha_vinculacion")
+  updatedAt        DateTime     @updatedAt @map("updated_at")
+
+  eventos EventoLinea[]
+
+  @@index([userId])
+  @@map("lineas")
+}
+
+model EventoLinea {
+  id        String   @id @default(uuid())
+  lineaId   String   @map("linea_id")
+  tipo      String                              // activada | kill_switched | desbloqueada | nueva_llave_detectada
+  detalle   Json
+  createdAt DateTime @default(now()) @map("created_at")
+
+  linea Linea @relation(fields: [lineaId], references: [id], onDelete: Cascade)
+
+  @@index([lineaId])
+  @@map("eventos_linea")
+}
+
+enum EstadoLinea {
+  vinculada
+  activa
+  bloqueada
+  kill_switched
+}

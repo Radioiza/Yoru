@@ -1,0 +1,28 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model KycRequest {
+  id            String        @id @default(uuid())
+  userId        String        @unique @map("user_id")
+  estado        EstadoKyc     @default(pendiente)
+  refIneS3      String?       @map("ref_ine_s3")
+  refSelfieS3   String?       @map("ref_selfie_s3")
+  scoreMatch    Float?        @map("score_match")
+  motivoRechazo String?       @map("motivo_rechazo")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  @@map("kyc_requests")
+}
+
+enum EstadoKyc {
+  pendiente
+  aprobado
+  rechazado
+}

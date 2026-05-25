@@ -1,0 +1,494 @@
+================================================================
+  YORU - ARQUITECTURA DE MICROSERVICIOS
+================================================================
+
+  Sistema de identidad digital para usuarios de telefonía móvil
+  con autenticación criptográfica ECDSA P-256.
+
+
+================================================================
+  DIAGRAMA GENERAL
+================================================================
+
+                          ┌─────────────────┐
+                          │     USUARIO     │
+                          └────────┬────────┘
+                                   │
+                                   ▼
+                  ┌────────────────────────────────┐
+                  │  FRONTEND REACT + Vite + Tailwind │
+                  │   (puerto 5173)                   │
+                  │                                   │
+                  │   - Gestión de la llave privada   │
+                  │   - IndexedDB (CryptoKey no-ext)  │
+                  │   - Web Crypto API (ECDSA P-256)  │
+                  └────────┬─────────────────────────┘
+                           │
+                           │ HTTPS / REST + JWT Bearer
+                           ▼
+       ┌─────────────────────────────────────────────────┐
+       │           INFRAESTRUCTURA BACKEND               │
+       │  (en producción aquí iría un API Gateway)       │
+       │                                                 │
+       │  ┌─────────────┐ ┌─────────────┐ ┌───────────┐ │
+       │  │AUTH-SERVICE │ │ PKI-SERVICE │ │KYC-SERVICE│ │
+       │  │   :3001     │ │    :3002    │ │   :3003   │ │
+       │  │             │ │             │ │           │ │
+       │  │ - register  │ │ - keys      │ │- presigned│ │
+       │  │ - challenge │ │ - verify    │ │  URLs     │ │
+       │  │ - login JWT │ │ - revoke    │ │- requests │ │
+       │  │ - me        │ │             │ │- approve  │ │
+       │  └──────┬──────┘ └──────┬──────┘ └─────┬─────┘ │
+       │         │               │              │       │
+       │         ▼               ▼              ▼       │
+       │  ┌───────────┐   ┌───────────┐  ┌───────────┐ │
+       │  │  AUTH DB  │   │   PKI DB  │  │   KYC DB  │ │
+       │  │ Postgres  │   │ Postgres  │  │ Postgres  │ │
+       │  │   :5433   │   │   :5434   │  │   :5435   │ │
+       │  │           │   │           │  │           │ │
+       │  │ users     │   │public_keys│  │kyc_requests│ │
+       │  │ sessions  │   │signatures │  │           │ │
+       │  │ challenges│   │           │  │           │ │
+       │  └───────────┘   └───────────┘  └───────────┘ │
+       │                                                 │
+       │  ┌──────────────────┐  ┌─────────────────────┐ │
+       │  │ TELECOM-SERVICE  │  │NOTIFICATION-SERVICE │ │
+       │  │     :3004        │  │       :3005         │ │
+       │  │                  │  │                     │ │
+       │  │ - lineas         │  │ - sin BD            │ │
+       │  │ - kill-switch    │  │ - subscribe('#')    │ │
+       │  │ - unblock        │  │ - emails formateados│ │
+       │  └────────┬─────────┘  └─────────────────────┘ │
+       │           │                                    │
+       │           ▼                                    │
+       │   ┌─────────────┐                              │
+       │   │ TELECOM DB  │                              │
+       │   │  Postgres   │                              │
+       │   │   :5436     │                              │
+       │   │             │                              │
+       │   │ lineas      │                              │
+       │   │eventos_linea│                              │
+       │   └─────────────┘                              │
+       │                                                 │
+       │  ┌──────────────────────────────────────────┐  │
+       │  │  MESSAGE BROKER — RabbitMQ (puerto 5672) │  │
+       │  │  Exchange: yoru.events (topic, durable)  │  │
+       │  │  UI: http://localhost:15672              │  │
+       │  └──────────────────────────────────────────┘  │
+       │                                                 │
+       │  ┌──────────────────────────────────────────┐  │
+       │  │  OBJECT STORAGE — MinIO (S3-compatible)  │  │
+       │  │  Puerto API: 9000  ·  UI: 9001           │  │
+       │  │  Bucket: kyc-documents                   │  │
+       │  │  CORS habilitado para localhost:5173     │  │
+       │  └──────────────────────────────────────────┘  │
+       └─────────────────────────────────────────────────┘
+
+
+================================================================
+  COMPONENTES — DESCRIPCIÓN Y RESPONSABILIDADES
+================================================================
+
+────────────────────────────────────────────────────────────────
+  FRONTEND  (React 18 + Vite + Tailwind CSS v4)
+────────────────────────────────────────────────────────────────
+
+  Carpeta:  registro/registro/src/
+  Puerto:   5173
+
+  Pantallas:
+    1. inicio       — bienvenida + lista de identidades guardadas
+    2. formulario   — captura de teléfono y CURP
+    3. biometria    — subida de INE y captura de selfie
+    4. generacion   — generación local de llaves ECDSA
+    5. reto         — challenge de firma y login
+    6. cuenta       — sesión autenticada (kill switch, revocar)
+
+  Módulos clave:
+    - api.js        — clientes HTTP de los 5 microservicios
+    - idb.js        — persistencia de identidades en IndexedDB
+
+  Decisiones de seguridad:
+    - La llave privada se re-importa con extractable:false
+      después de exportar la pública a PEM.
+    - JWT se mantiene en memoria (no localStorage) para mitigar
+      XSS.
+    - Web Crypto API para todas las operaciones criptográficas.
+
+
+────────────────────────────────────────────────────────────────
+  AUTH-SERVICE  (Fastify + Prisma + Postgres + RabbitMQ)
+────────────────────────────────────────────────────────────────
+
+  Carpeta:  yoru-backend/services/auth-service/
+  Puerto:   3001
+  BD:       postgres://...@localhost:5433/auth
+
+  Responsabilidad:
+    Registrar usuarios, gestionar challenges (nonces para firma)
+    y emitir JSON Web Tokens tras una autenticación exitosa.
+
+  Endpoints:
+    POST /api/auth/register   — crear usuario nuevo
+    GET  /api/auth/users/:id  — consultar
+    POST /api/auth/challenge  — generar nonce para firma
+    POST /api/auth/login      — verificar firma → emitir JWT
+    GET  /api/auth/me         — perfil del usuario logueado (auth)
+
+  Tablas Prisma:
+    users        — id, curp (unique), telefono (unique), estado
+    sessions     — tokens emitidos
+    challenges   — nonces con expiración de 5 min y flag usado
+
+  Eventos publicados:
+    auth.user_created      — al registrar
+    auth.login_success     — al loguear
+    auth.failed_attempt    — firma inválida en login
+
+  Notas:
+    - Para hacer login, este servicio llama internamente al
+      pki-service vía HTTP para verificar la firma.
+    - JWT firmado con HS256, secreto compartido entre servicios.
+    - Challenges marcados como "usado" tras login exitoso para
+      evitar replay attacks.
+
+
+────────────────────────────────────────────────────────────────
+  PKI-SERVICE  (Fastify + Prisma + Postgres + RabbitMQ)
+────────────────────────────────────────────────────────────────
+
+  Carpeta:  yoru-backend/services/pki-service/
+  Puerto:   3002
+  BD:       postgres://...@localhost:5434/pki
+
+  Responsabilidad:
+    Almacenar las llaves PÚBLICAS de los usuarios y verificar
+    firmas ECDSA P-256. Las privadas NUNCA llegan aquí.
+
+  Endpoints:
+    POST /api/pki/keys                  — registrar llave pública
+    GET  /api/pki/keys/:userId          — consultar llave activa
+    POST /api/pki/verify                — verificar firma ECDSA
+    POST /api/pki/keys/:id/revoke       — revocar llave (auth)
+
+  Tablas Prisma:
+    public_keys  — userId, pem, curva (P-256), revocada, fechas
+    signatures   — log de verificaciones (audit trail)
+
+  Eventos publicados:
+    pki.key_registered      — al registrar
+    pki.new_key_attempt     — detectó nueva llave con previa activa
+    pki.key_revoked         — al revocar
+    auth.failed_attempt     — firma inválida en verify
+
+  Algoritmo de verificación:
+    ECDSA P-256 con SHA-256, firma en formato IEEE P1363 (raw),
+    misma que produce Web Crypto API en el navegador.
+
+
+────────────────────────────────────────────────────────────────
+  KYC-SERVICE  (Fastify + Prisma + Postgres + AWS S3 SDK)
+────────────────────────────────────────────────────────────────
+
+  Carpeta:  yoru-backend/services/kyc-service/
+  Puerto:   3003
+  BD:       postgres://...@localhost:5435/kyc
+
+  Responsabilidad:
+    Recibir, almacenar y aprobar/rechazar solicitudes de
+    verificación de identidad (INE + selfie).
+
+  Endpoints:
+    POST /api/kyc/presigned-urls            — URLs firmadas para
+                                              subida directa al S3
+    POST /api/kyc/requests                  — crear solicitud
+    GET  /api/kyc/requests/:userId          — consultar
+    POST /api/kyc/requests/:userId/approve  — aprobar
+    POST /api/kyc/requests/:userId/reject   — rechazar
+    GET  /api/kyc/download-url?key=...      — URL para revisor
+
+  Tablas Prisma:
+    kyc_requests  — userId, estado (pendiente/aprobado/rechazado),
+                    refIneS3, refSelfieS3, scoreMatch
+
+  Eventos publicados:
+    kyc.completed   — al aprobar
+    kyc.rejected    — al rechazar
+
+  Integración con MinIO:
+    En el arranque, el servicio:
+    1. Verifica que el bucket "kyc-documents" exista (lo crea si no).
+    2. Configura CORS al bucket para localhost:5173.
+
+    Para cada subida, genera 2 presigned PUT URLs (5 min) que
+    el navegador usa para subir el PDF de INE y la selfie
+    directamente a MinIO. El servicio nunca toca los bytes del
+    archivo, solo gestiona la metadata.
+
+
+────────────────────────────────────────────────────────────────
+  TELECOM-SERVICE  (Fastify + Prisma + Postgres + RabbitMQ)
+────────────────────────────────────────────────────────────────
+
+  Carpeta:  yoru-backend/services/telecom-service/
+  Puerto:   3004
+  BD:       postgres://...@localhost:5436/telecom
+
+  Responsabilidad:
+    Asociar números telefónicos a usuarios. Gestionar el ciclo
+    de vida de la línea (activa, kill_switched, bloqueada).
+
+  Endpoints:
+    POST /api/telecom/lineas                            — vincular
+    GET  /api/telecom/lineas/:telefono                  — consultar
+    POST /api/telecom/lineas/:telefono/kill-switch (auth)— bloquear
+    POST /api/telecom/lineas/:telefono/unblock     (auth)— activar
+
+  Tablas Prisma:
+    lineas         — telefono (unique), userId, publicKeyId, estado
+    eventos_linea  — historial de cambios de estado
+
+  Eventos publicados:
+    telecom.kill_switch_activado   — al activar kill switch
+
+  Eventos consumidos:
+    kyc.completed        → activa la línea automáticamente
+    pki.new_key_attempt  → kill switch automático
+
+
+────────────────────────────────────────────────────────────────
+  NOTIFICATION-SERVICE  (Fastify + amqplib + Nodemailer)
+────────────────────────────────────────────────────────────────
+
+  Carpeta:  yoru-backend/services/notification-service/
+  Puerto:   3005
+  BD:       NINGUNA
+
+  Responsabilidad:
+    Suscribirse a TODOS los eventos del exchange y generar
+    notificaciones formateadas (correos, SMS simulados).
+
+  Endpoints:
+    GET /health           — uptime + total de notificaciones
+    GET /notifications    — historial en memoria
+
+  Eventos consumidos: # (todos)
+
+  Plantillas (templates.js):
+    auth.user_created          → "Bienvenido"
+    kyc.completed              → "Tu identidad fue verificada"
+    kyc.rejected               → "Solicitud KYC rechazada"
+    pki.key_registered         → "Nueva llave registrada"
+    pki.new_key_attempt        → "ALERTA: intento nueva llave"
+    pki.key_revoked            → "Llave revocada"
+    auth.failed_attempt        → "Intento de auth fallido"
+    telecom.kill_switch_activado → "Tu línea fue bloqueada"
+
+  Por default usa nodemailer en modo jsonTransport (stdout). Se
+  puede cambiar a SMTP real con variables de entorno.
+
+
+================================================================
+  CATÁLOGO DE EVENTOS DEL BUS
+================================================================
+
+  Exchange:     yoru.events
+  Tipo:         topic
+  Durable:      true
+
+  Routing key                      Publisher    Consumer(s)
+  ─────────────────────────────────────────────────────────────────
+  auth.user_created                auth         notification
+  auth.login_success               auth         notification
+  auth.failed_attempt              auth, pki    notification
+  kyc.completed                    kyc          telecom, notification
+  kyc.rejected                     kyc          notification
+  pki.key_registered               pki          notification
+  pki.new_key_attempt              pki          telecom, notification
+  pki.key_revoked                  pki          notification
+  telecom.kill_switch_activado     telecom      notification
+
+
+================================================================
+  FLUJOS PRINCIPALES (SECUENCIA)
+================================================================
+
+────────────────────────────────────────────────────────────────
+  FLUJO 1 — REGISTRO COMPLETO DE USUARIO NUEVO
+────────────────────────────────────────────────────────────────
+
+  Usuario         Frontend       Auth      KYC       PKI    Telecom  Broker
+    │                │             │        │         │        │       │
+    │── ingresa ────▶│             │        │         │        │       │
+    │   datos        │── POST     ─▶        │         │        │       │
+    │                │   /register │        │         │        │       │
+    │                │◀── 201 ─────┤        │         │        │       │
+    │                │             │── publica ──────────────────────▶ │
+    │                │             │   auth.user_created                │
+    │                │             │                                    │
+    │── sube INE ───▶│             │        │         │        │       │
+    │   y selfie     │── POST     ───────  ─▶                            │
+    │                │   /presigned-urls    │                            │
+    │                │◀── URLs firmadas ────┤                            │
+    │                │── PUT directo a MinIO (skipping backend) ──▶ MinIO│
+    │                │── POST /kyc/requests ▶                            │
+    │                │── POST /approve   ──▶                            │
+    │                │             │       │── publica ─────────────▶  │
+    │                │             │       │   kyc.completed             │
+    │                │             │       │              ◀── consume ──┤
+    │                │             │       │              │activa línea │
+    │                │             │       │              │── publica ─▶│
+    │                │             │       │              │auth.user_…  │
+    │                │             │       │              │             │
+    │── genera ─────▶│             │       │         │        │         │
+    │   llaves       │── Web Crypto API (local)               │         │
+    │                │── POST /pki/keys ────────────▶         │         │
+    │                │             │       │         │── publica ─────▶│
+    │                │             │       │         │pki.key_registered│
+    │                │── POST /telecom/lineas ─────────────────▶       │
+    │                │── guarda en IndexedDB                            │
+    │                │   (extractable:false)                            │
+
+
+────────────────────────────────────────────────────────────────
+  FLUJO 2 — LOGIN CON FIRMA ECDSA
+────────────────────────────────────────────────────────────────
+
+  Frontend                Auth                          PKI
+     │                     │                             │
+     │── POST /challenge ─▶│                             │
+     │                     │── insert challenge en DB    │
+     │◀── { nonce, id } ───┤                             │
+     │                     │                             │
+     │── firma local con   │                             │
+     │   Web Crypto        │                             │
+     │                     │                             │
+     │── POST /login ─────▶│                             │
+     │  { userId,          │── busca challenge en DB     │
+     │    challengeId,     │── verifica no expirado/usado│
+     │    signatureB64 }   │── POST /api/pki/verify ────▶│
+     │                     │                              │── valida ECDSA
+     │                     │                              │── guarda en DB
+     │                     │◀── { valida: true } ─────────┤   signatures
+     │                     │── marca challenge usado      │
+     │                     │── crea session en DB         │
+     │                     │── firma JWT (HS256)          │
+     │                     │── publica login_success ─────────▶
+     │◀── { token, user } ─┤                              │
+
+
+────────────────────────────────────────────────────────────────
+  FLUJO 3 — KILL SWITCH AUTOMÁTICO (REACCIÓN A EVENTO)
+────────────────────────────────────────────────────────────────
+
+  Atacante       PKI                       Broker          Telecom    Notif
+     │            │                          │                │         │
+     │── intenta ▶│                          │                │         │
+     │   registrar│                          │                │         │
+     │   llave    │                          │                │         │
+     │            │── busca llave activa     │                │         │
+     │            │   en BD → SÍ existe      │                │         │
+     │            │── crea fila nueva        │                │         │
+     │            │── publica ──────────────▶│                │         │
+     │            │   pki.new_key_attempt    │── enruta ─────▶│         │
+     │            │                          │                │── recibe│
+     │            │                          │                │── busca │
+     │            │                          │                │   línea │
+     │            │                          │                │── update│
+     │            │                          │                │   estado│
+     │            │                          │                │   = kill│
+     │            │                          │── enruta ──────│─────────▶│
+     │            │                          │                │         │── render
+     │            │                          │                │         │   email
+     │            │                          │                │         │   alerta
+
+
+================================================================
+  STACK TECNOLÓGICO COMPLETO
+================================================================
+
+  Capa                Tecnología               Versión
+  ─────────────────────────────────────────────────────────
+  Frontend            React                    18.x
+                      Vite                     6.x
+                      Tailwind CSS             v4
+  Backend             Node.js                  ≥20
+                      Fastify                  4.x
+                      Prisma ORM               5.22
+  Base de datos       PostgreSQL               16-alpine
+  Broker              RabbitMQ                 3-management
+  Storage             MinIO                    latest
+  Criptografía        Web Crypto API           (nativa W3C)
+                      ECDSA                    curva P-256
+                      Hash                     SHA-256
+                      Formato firma            IEEE P1363
+  Tokens              JSON Web Tokens          HS256
+                      jsonwebtoken             9.x
+  Persistencia cliente IndexedDB               (nativa)
+  Containerización    Docker Compose v2
+
+
+================================================================
+  DECISIONES DE DISEÑO IMPORTANTES
+================================================================
+
+1) DATABASE PER SERVICE
+   Cada microservicio tiene su propia BD. Auth no puede leer
+   PKI por SQL. Eso fuerza la comunicación por API o eventos.
+
+2) EVENT-DRIVEN ARCHITECTURE
+   Los servicios publican lo que les pasa sin saber quién
+   escucha. Eso desacopla y permite añadir nuevos consumidores
+   (ej: analytics, audit log) sin tocar a los productores.
+
+3) CRYPTO CLIENT-SIDE
+   La llave privada vive solo en el navegador del usuario, con
+   extractable:false. Eso elimina la categoría de ataques de
+   "alguien rompe el servidor y se lleva las llaves".
+
+4) PRESIGNED UPLOADS
+   Los archivos pesados (INE, selfie) van directo del cliente
+   a MinIO sin pasar por nuestro backend. Eso ahorra ancho de
+   banda y permite escalar la subida horizontalmente.
+
+5) JWT STATELESS + REVOCATION DESACOPLADA
+   Cada servicio valida JWT con el secreto compartido sin
+   consultar a auth. Para revocar (en producción) se usaría
+   una lista corta de tokens revocados en Redis con TTL = expiry.
+
+6) AUTHORIZATION ≠ AUTHENTICATION
+   Los endpoints protegidos no solo verifican que el JWT es
+   válido (authn), sino que el userId del token coincida con
+   el dueño del recurso (authz). De ahí los 403 al intentar
+   bloquear una línea ajena.
+
+
+================================================================
+  LIMITACIONES CONOCIDAS Y MEJORAS FUTURAS
+================================================================
+
+  - No hay API Gateway. En producción iría Kong/Traefik/Envoy
+    delante para centralizar TLS, rate limiting y CORS.
+
+  - JWT no se revocan. Hace falta una blacklist o usar refresh
+    tokens con expiraciones cortas (5 min) + un endpoint de
+    refresh que vaya a verificar contra una sesión persistida.
+
+  - No hay refresh tokens. Cuando expira el JWT el usuario tiene
+    que volver a firmar un challenge.
+
+  - No hay rate limiting. Cualquiera puede llamar a /register
+    miles de veces.
+
+  - No hay tests automatizados. Falta cobertura unitaria e
+    integración.
+
+  - No hay observabilidad. Falta métricas (Prometheus), trazas
+    distribuidas (OpenTelemetry) y logs centralizados.
+
+  - El KYC se auto-aprueba. En producción requiere revisión
+    humana o un servicio de matching facial (Onfido, Veriff).
+
+  - WebAuthn no implementado. Sería el siguiente paso para
+    desbloquear la llave con biometría del dispositivo (TouchID,
+    Windows Hello, FIDO2).

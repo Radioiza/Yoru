@@ -1,0 +1,635 @@
+================================================================
+  YORU - COMO FUNCIONA TODO
+  Documento para el equipo: que es, como esta hecho, que tecnologias usa.
+================================================================
+
+
+================================================================
+  1. EL PROBLEMA QUE RESUELVE
+================================================================
+
+Hoy en Mexico cuando compras un chip de telefono celular, las
+companias telefonicas no validan rigurosamente la identidad del
+duenio. Eso facilita:
+
+  - Que alguien registre lineas a tu nombre sin que tu te enteres.
+  - Que un atacante "clone" tu identidad para meterse a tus
+    cuentas bancarias usando SMS de verificacion.
+  - Que las lineas robadas se sigan usando porque no hay un
+    mecanismo facil para que el duenio las bloquee remotamente.
+
+YORU vincula cada linea telefonica a UNA persona real, validada
+con su CURP y su INE. Si alguien intenta registrar otra llave
+con tu identidad o tu pierdes el telefono, el sistema lo detecta
+y bloquea la linea automaticamente.
+
+
+================================================================
+  2. LA IDEA EN UNA FRASE
+================================================================
+
+  "Tu telefono tiene una llave secreta unica que demuestra que
+   eres tu, sin necesidad de contrasenas. Si alguien intenta usar
+   tu cuenta desde otro lugar, el sistema lo detecta al instante
+   y bloquea la linea."
+
+Es el mismo principio que usan las Passkeys de Apple, los
+Yubikey o la biometria de Windows Hello.
+
+
+================================================================
+  3. ARQUITECTURA EN UNA IMAGEN
+================================================================
+
+  USUARIO
+     |
+     | (navegador con su llave secreta)
+     V
+  +-----------------------------------------------------+
+  |              FRONTEND (React + Tailwind)            |
+  |  Pantallas: bienvenida, registro, biometria, login,  |
+  |  generacion de llaves, reto de firma, mi cuenta     |
+  +-----------------------------------------------------+
+     | HTTP (peticiones JSON)
+     V
+  +-----------------------------------------------------+
+  |                BACKEND - MICROSERVICIOS              |
+  |                                                      |
+  |  AUTH       PKI        KYC        TELECOM           |
+  |  (datos     (llaves    (INE +    (lineas             |
+  |  personales) cripto)   selfie)    telefonicas)       |
+  |     |          |          |          |               |
+  |    AUTH-DB   PKI-DB    KYC-DB   TELECOM-DB           |
+  |    (Postgres)(Postgres)(Postgres)(Postgres)          |
+  |                                                      |
+  |  NOTIFICATION (manda correos cuando pasan eventos)   |
+  |                                                      |
+  |  RabbitMQ (bus de eventos entre microservicios)      |
+  |                                                      |
+  |  MinIO (almacenamiento de archivos INE + selfies)    |
+  +-----------------------------------------------------+
+
+
+================================================================
+  4. POR QUE MICROSERVICIOS Y NO UN SOLO PROGRAMA
+================================================================
+
+En vez de tener UN gigante backend que haga todo, dividimos las
+responsabilidades en 5 servicios pequenios. Cada uno:
+  - Tiene su PROPIA base de datos
+  - Se ejecuta como un proceso independiente
+  - Habla con los demas SOLO por HTTP o eventos (nunca compartiendo
+    base de datos)
+
+Ventajas:
+  - Si uno falla, los demas siguen funcionando.
+  - Cada equipo puede trabajar en su servicio sin pisar a los demas.
+  - Se pueden escalar por separado (si KYC esta saturado, levantas
+    mas instancias solo de KYC).
+  - Cumple el principio "database-per-service" que se usa en sistemas
+    grandes reales (Amazon, Netflix, etc).
+
+Desventajas:
+  - Mas complejo de desplegar (necesitas Docker).
+  - La comunicacion entre servicios anade latencia y debes
+    manejar errores de red.
+
+
+================================================================
+  5. CADA MICROSERVICIO EN DETALLE
+================================================================
+
+----------------------------------------------------------------
+  AUTH-SERVICE  (puerto 3001)
+----------------------------------------------------------------
+
+  QUE HACE:
+    - Registra usuarios nuevos (telefono, CURP, nombre)
+    - Maneja la sesion (login, JWT, logout implicito)
+    - Genera "challenges" (numeros aleatorios que el cliente debe
+      firmar para demostrar que tiene la llave secreta correcta)
+
+  TECNOLOGIAS:
+    - Node.js + Fastify (servidor HTTP rapido y ligero)
+    - Prisma ORM (para hablar con la BD sin escribir SQL a mano)
+    - jsonwebtoken (firma de tokens JWT)
+    - amqplib (publica eventos a RabbitMQ)
+
+  SU BASE DE DATOS (auth-db, Postgres):
+    Tabla "users":
+      id, telefono, curp, nombre, estado, createdAt, updatedAt
+    Tabla "sessions":
+      tokens emitidos y su fecha de expiracion
+    Tabla "challenges":
+      numeros aleatorios que el cliente debe firmar
+
+
+----------------------------------------------------------------
+  PKI-SERVICE  (puerto 3002)
+----------------------------------------------------------------
+
+  QUE HACE:
+    - Guarda la llave PUBLICA de cada usuario (la privada NUNCA
+      sale del navegador del usuario)
+    - Verifica firmas digitales: cuando el cliente firma un
+      challenge, este servicio comprueba que la firma sea correcta
+      usando la llave publica guardada
+    - Permite revocar llaves si el usuario las pierde
+
+  TECNOLOGIAS:
+    - Node.js + Fastify
+    - Prisma + Postgres
+    - Web Crypto API (estandar W3C, viene en Node.js 18+)
+    - ECDSA P-256 con SHA-256 (mismo algoritmo que TLS 1.3,
+      Yubikey, Passkeys de Apple)
+
+  SU BASE DE DATOS (pki-db, Postgres):
+    Tabla "public_keys":
+      id, userId, publicKeyPem, curva (P-256), revocada
+    Tabla "signatures":
+      log de cada verificacion (auditoria)
+
+
+----------------------------------------------------------------
+  KYC-SERVICE  (puerto 3003)
+----------------------------------------------------------------
+
+  QUE HACE:
+    - Recibe el INE (PDF) y la selfie del usuario
+    - Guarda los archivos en MinIO (almacenamiento tipo S3)
+    - Aprueba o rechaza la validacion
+    - En produccion comparariamos la cara con la INE; aqui es
+      auto-aprobado para demo
+
+  TECNOLOGIAS:
+    - Node.js + Fastify
+    - Prisma + Postgres
+    - AWS SDK for JavaScript (compatible con MinIO porque MinIO
+      implementa la misma API que Amazon S3)
+
+  SU BASE DE DATOS (kyc-db, Postgres):
+    Tabla "kyc_requests":
+      userId, estado (pendiente/aprobado/rechazado),
+      ruta del INE en S3, ruta de la selfie en S3, score
+
+  COMO SE SUBEN LOS ARCHIVOS:
+    No los recibe directamente este servicio. En su lugar:
+    1. El frontend pide a kyc-service una "URL firmada" (presigned
+       URL) de MinIO.
+    2. El navegador hace PUT directo a MinIO con esa URL.
+    3. Esto ahorra ancho de banda y permite escalar.
+
+
+----------------------------------------------------------------
+  TELECOM-SERVICE  (puerto 3004)
+----------------------------------------------------------------
+
+  QUE HACE:
+    - Vincula cada numero telefonico a un usuario y a una llave
+    - Controla el estado de la linea: vinculada / activa /
+      bloqueada / reportada-como-robada (kill switch)
+    - Reacciona a eventos del sistema:
+      * Cuando KYC se aprueba, activa la linea automaticamente
+      * Cuando alguien intenta registrar una llave nueva en una
+        cuenta ya existente, bloquea la linea como sospechosa
+
+  TECNOLOGIAS:
+    - Node.js + Fastify
+    - Prisma + Postgres
+    - amqplib (consume eventos de RabbitMQ y publica eventos)
+
+  SU BASE DE DATOS (telecom-db, Postgres):
+    Tabla "lineas":
+      telefono, userId, publicKeyId, estado, fechaVinculacion
+    Tabla "eventos_linea":
+      historial de cambios (vinculada, activada, bloqueada, etc)
+
+
+----------------------------------------------------------------
+  NOTIFICATION-SERVICE  (puerto 3005)
+----------------------------------------------------------------
+
+  QUE HACE:
+    - Escucha TODOS los eventos del sistema en RabbitMQ
+    - Para cada evento, genera una notificacion formateada
+      (en demo se imprimen en consola; en produccion serian
+      correos reales)
+    - Es 100% asincrono: si este servicio se cae, los demas
+      siguen funcionando, los eventos se acumulan en cola
+
+  TECNOLOGIAS:
+    - Node.js + Fastify
+    - amqplib
+    - Nodemailer (en modo "jsonTransport" para demo, sin enviar
+      correos reales por SMTP)
+
+  NO TIENE BASE DE DATOS. Solo lee eventos y genera notificaciones
+  en el momento.
+
+
+================================================================
+  6. EL FRONTEND
+================================================================
+
+  QUE ES:
+    Aplicacion web (corre en el navegador) con la que el usuario
+    interactua.
+
+  TECNOLOGIAS:
+    - React 18 (libreria de componentes)
+    - Vite (servidor de desarrollo rapido)
+    - Tailwind CSS v4 (estilos)
+    - Web Crypto API (generar y usar llaves criptograficas
+      directamente en el navegador, sin que ninguna llave privada
+      salga del dispositivo del usuario)
+
+  PANTALLAS:
+    1. Home              - bienvenida y opciones (registrarme,
+                           iniciar sesion, ver tutorial)
+    2. Tutorial          - guia interactiva estilo Brawl Stars,
+                           muestra como funciona la app paso a paso
+    3. Formulario        - el usuario captura telefono, CURP y nombre
+    4. Biometria         - sube INE en PDF y toma selfie con la camara
+    5. Generacion        - genera el par de llaves localmente y
+                           descarga el archivo de llave (.json)
+    6. Reto              - firma un challenge para demostrar que tiene
+                           la llave correcta
+    7. Login             - sube su archivo de llave para volver a entrar
+    8. Mi Cuenta         - panel autenticado con saludo personalizado,
+                           foto de perfil editable, estado de la linea,
+                           boton para reportar robo, boton para revocar
+                           la llave
+
+
+================================================================
+  7. INFRAESTRUCTURA (LO QUE CORRE EN DOCKER)
+================================================================
+
+----------------------------------------------------------------
+  POSTGRESQL x 4
+----------------------------------------------------------------
+
+  Una instancia por microservicio (puertos 5433, 5434, 5435, 5436).
+  Por que separadas: cumple el principio "database-per-service".
+  Asi auth no puede ver pki por SQL; tienen que hablar por HTTP.
+
+  Por que Postgres: motor SQL maduro, soporta JSON, transacciones,
+  indices avanzados, y es el favorito del ecosistema Node.js.
+
+
+----------------------------------------------------------------
+  RABBITMQ (puerto 5672, UI en 15672)
+----------------------------------------------------------------
+
+  Es el "bus de eventos" del sistema. Funciona asi:
+
+    1. Un servicio publica un mensaje con una "routing key" (etiqueta).
+       Ejemplo: telecom publica "kyc.completed"
+    2. Otros servicios estan suscritos a ciertas routing keys.
+       Ejemplo: telecom esta suscrito a "kyc.completed" para activar
+       la linea cuando el KYC se aprueba.
+    3. RabbitMQ entrega el mensaje a los suscriptores.
+
+  Ventajas:
+    - El que publica no necesita saber quien escucha.
+    - Si el suscriptor se cae, los mensajes se acumulan en cola y se
+      procesan cuando vuelva.
+    - Anadir nuevos suscriptores (ej. analytics) no requiere tocar
+      el codigo de los servicios existentes.
+
+
+----------------------------------------------------------------
+  MINIO (puerto 9000, UI en 9001)
+----------------------------------------------------------------
+
+  Es un servidor de almacenamiento de archivos compatible con
+  Amazon S3 que se puede correr en local.
+
+  Lo usamos para los documentos KYC: los PDFs del INE y las
+  selfies. Los archivos no se guardan en Postgres porque son
+  binarios grandes; el SQL no es bueno para eso.
+
+
+================================================================
+  8. EL FLUJO COMPLETO (PASO A PASO)
+================================================================
+
+----------------------------------------------------------------
+  REGISTRO DE UN USUARIO NUEVO
+----------------------------------------------------------------
+
+  1. Usuario llega al Home y le da a "Registrarme".
+
+  2. Formulario: escribe telefono (10 digitos), CURP (18 chars)
+     y nombre ("como te gusta que te digan"). Le da a Continuar.
+
+     -> El frontend hace POST a auth-service /api/auth/register.
+     -> auth-service valida, crea el usuario en auth-db, publica
+        el evento "auth.user_created".
+     -> notification-service recibe el evento, imprime un "correo"
+        de bienvenida en su consola.
+
+  3. Biometria: sube el INE (PDF) y toma una selfie. Le da a
+     Continuar.
+
+     -> El frontend pide a kyc-service URLs firmadas de MinIO.
+     -> El navegador sube el PDF y la selfie DIRECTO a MinIO
+        (sin pasar por kyc-service para ahorrar trafico).
+     -> El frontend crea el KYC request en kyc-db con las rutas
+        de los archivos.
+     -> Se auto-aprueba (en demo). KYC publica "kyc.completed".
+     -> telecom-service recibe el evento, prepara la linea.
+     -> notification publica "tu identidad fue verificada".
+
+  4. Generacion de identidad: el navegador genera un par de
+     llaves criptograficas ECDSA P-256 con Web Crypto API.
+
+     -> Solo la llave PUBLICA se envia a pki-service y se guarda
+        en pki-db.
+     -> La llave PRIVADA se guarda en un archivo .json que el
+        usuario debe DESCARGAR.
+     -> telecom-service vincula el telefono a la llave en telecom-db.
+
+  5. Reto de firma: el usuario firma un challenge.
+
+     -> El frontend pide un challenge (un numero aleatorio) a
+        auth-service.
+     -> El navegador firma el challenge con la llave privada
+        (que esta en memoria desde el paso 4).
+     -> El frontend envia la firma a auth-service.
+     -> auth-service le pide a pki-service que verifique la firma.
+     -> pki-service comprueba con la llave publica que la firma
+        es valida.
+     -> auth-service emite un JWT (token de sesion) valido por 1 hora.
+
+  6. Mi Cuenta: el usuario ve su panel personalizado.
+
+     -> Saludo dinamico segun la hora ("Buenas tardes, Mariam").
+     -> Foto de perfil editable (default: la selfie del registro).
+     -> Estado de la linea (VINCULADA / ACTIVA).
+     -> Botones para reportar robo/perdida y revocar la llave.
+
+
+----------------------------------------------------------------
+  INICIO DE SESION (USUARIO RECURRENTE)
+----------------------------------------------------------------
+
+  1. Usuario llega al Home y le da a "Iniciar sesion".
+
+  2. Sube su archivo de llave (.json) que descargo al registrarse.
+
+     -> El navegador lee el archivo, importa la llave privada.
+
+  3. Le da a "Firmar y entrar".
+
+     -> Mismo flujo de reto de firma que el paso 5 del registro.
+     -> Recibe un JWT nuevo.
+
+  4. Entra a Mi Cuenta.
+
+
+----------------------------------------------------------------
+  ESCENARIO DE SEGURIDAD: KILL SWITCH AUTOMATICO
+----------------------------------------------------------------
+
+  Que pasa si alguien roba la identidad de un usuario y trata
+  de registrar una llave nueva a su nombre:
+
+  1. El atacante intenta hacer POST a pki-service /keys con un
+     userId que ya tiene una llave activa.
+
+  2. pki-service detecta que ese usuario YA tiene una llave
+     registrada. Publica el evento "pki.new_key_attempt".
+
+  3. telecom-service esta escuchando ese evento. Reacciona:
+     bloquea la linea automaticamente (estado kill_switched).
+
+  4. notification-service tambien escucha. Publica una alerta
+     critica al duenio original.
+
+  Todo esto pasa sin que ningun servicio llame a otro
+  directamente. Solo eventos. Es la magia de la arquitectura
+  event-driven.
+
+
+================================================================
+  9. SEGURIDAD: POR QUE ES SEGURO
+================================================================
+
+----------------------------------------------------------------
+  LA LLAVE PRIVADA NUNCA SALE DEL DISPOSITIVO DEL USUARIO
+----------------------------------------------------------------
+
+  Se genera en el navegador, se guarda en un archivo que solo
+  el usuario tiene, y se importa al navegador cada vez que
+  inicia sesion.
+
+  Cuando el navegador la usa para firmar, lo hace con
+  "extractable: false", lo que significa que ni siquiera el
+  propio JavaScript de la pagina puede leerla. Solo puede
+  ordenarle al navegador que firme cosas.
+
+  Esto elimina toda una categoria de ataques: si alguien
+  hackea NUESTROS servidores, no encuentra ninguna llave
+  privada porque NUNCA las recibimos.
+
+
+----------------------------------------------------------------
+  AUTENTICACION SIN CONTRASENAS
+----------------------------------------------------------------
+
+  En lugar de contrasenas (que se pueden robar, filtrar o
+  adivinar), usamos firmas criptograficas. El usuario demuestra
+  que es el firmando un numero unico (challenge) cada vez.
+
+  Es el mismo principio que usan los Yubikey, las Passkeys de
+  Apple y el estandar FIDO2.
+
+
+----------------------------------------------------------------
+  CHALLENGES UNICOS Y DE UN SOLO USO
+----------------------------------------------------------------
+
+  Cada challenge es un numero aleatorio que solo sirve UNA vez
+  y caduca en 5 minutos. Eso evita los "replay attacks": si
+  alguien intercepta tu firma, no puede reusarla.
+
+
+----------------------------------------------------------------
+  JWT CON FIRMA COMPARTIDA
+----------------------------------------------------------------
+
+  Tras un login exitoso, auth emite un JSON Web Token. Los demas
+  servicios pueden verificar ese token sin tener que preguntarle
+  a auth (saben la misma clave secreta). El token expira en 1 hora.
+
+
+----------------------------------------------------------------
+  AUTORIZACION POR DUENIO
+----------------------------------------------------------------
+
+  Tener un token valido no es suficiente. Cada endpoint sensible
+  verifica que el userId del token coincida con el dueno del
+  recurso. Asi nadie puede bloquear la linea de OTRO usuario
+  aunque tenga su token (ej. en pruebas con un userId equivocado
+  da 403 Forbidden).
+
+
+================================================================
+  10. RESUMEN DE TECNOLOGIAS USADAS
+================================================================
+
+  CAPA              TECNOLOGIA              PARA QUE
+  -------------------------------------------------------------
+  Frontend          React 18                Componentes UI
+                    Vite                    Servidor de desarrollo
+                    Tailwind CSS v4         Estilos
+                    Web Crypto API          Llaves y firmas en el
+                                            navegador
+
+  Backend           Node.js 20+             Runtime de JavaScript
+                    Fastify                 Framework HTTP rapido
+                    Prisma ORM              Acceso a la BD sin SQL
+                                            a mano
+                    amqplib                 Cliente de RabbitMQ
+                    jsonwebtoken            Emite y verifica JWT
+                    Nodemailer              Genera correos
+                                            formateados
+                    AWS SDK v3              Habla con MinIO/S3
+
+  Bases de datos    PostgreSQL 16           4 instancias separadas
+                                            (auth-db, pki-db,
+                                            kyc-db, telecom-db)
+
+  Broker            RabbitMQ 3              Bus de eventos
+                                            asincronos
+
+  Almacenamiento    MinIO                   Compatible con S3 para
+                                            INE y selfies
+
+  Containerizacion  Docker Compose          Levanta toda la
+                                            infraestructura con
+                                            un comando
+
+  Criptografia      ECDSA P-256             Algoritmo de firma
+                                            digital (mismo de TLS,
+                                            FIDO2, Passkeys)
+                    SHA-256                 Hash criptografico
+                    JWT HS256               Tokens de sesion firmados
+
+  Tooling           Python 3                Script de arranque
+                                            automatizado (iniciar.py)
+
+
+================================================================
+  11. DECISIONES DE DISENIO IMPORTANTES (PARA DEFENDER EL PROYECTO)
+================================================================
+
+  A. "Database per service": cada microservicio tiene su propia
+     BD. Costo: mas BDs que mantener. Beneficio: aislamiento real,
+     equipos independientes, escalabilidad.
+
+  B. "Event-driven": los servicios no se llaman directamente,
+     publican eventos. Costo: mas complejo de razonar.
+     Beneficio: anadir consumidores sin tocar productores.
+
+  C. "Crypto client-side": las llaves privadas NUNCA llegan a
+     nuestros servidores. Costo: si el usuario pierde su archivo
+     de llave, no puede recuperar la cuenta. Beneficio: si
+     hackean nuestros servidores no hay llaves que robar.
+
+  D. "Stateless JWT": cada servicio valida el token sin consultar
+     a auth. Costo: revocar es mas complejo (necesitarias una
+     blacklist). Beneficio: cada peticion es independiente y
+     escalable.
+
+  E. "Presigned uploads": los archivos van directo del navegador
+     a MinIO sin pasar por nuestro backend. Costo: hay que
+     configurar CORS. Beneficio: ahorra ancho de banda y permite
+     subidas paralelas.
+
+
+================================================================
+  12. LIMITACIONES CONOCIDAS (TAMBIEN HAY QUE DECIRLAS)
+================================================================
+
+  - No hay API Gateway. En produccion iria Kong o Traefik delante
+    para centralizar TLS, rate limiting y CORS.
+  - No hay refresh tokens. Si tu JWT expira tienes que firmar de
+    nuevo un challenge.
+  - No hay rate limiting. Cualquiera podria llamar /register
+    miles de veces.
+  - El KYC se auto-aprueba. En produccion lo revisaria un humano
+    o un servicio de matching facial (Onfido, Veriff, etc).
+  - No hay tests automatizados.
+  - No hay observabilidad (metricas, traces, logs centralizados).
+  - WebAuthn no implementado. Seria el siguiente paso para
+    desbloquear la llave con TouchID o Windows Hello.
+
+
+================================================================
+  13. COMO ARRANCAR TODO EN UN SOLO COMANDO
+================================================================
+
+  1. Tener Docker Desktop corriendo.
+  2. Hacer doble-click a "Iniciar Yoru.bat", o desde PowerShell:
+
+       cd C:\Users\carlo\OneDrive\Escritorio\index_tuto
+       python iniciar.py
+
+  3. Esperar a que abra el navegador en http://localhost:5173.
+
+  Para detener: doble-click a "Detener Yoru.bat" o
+                python iniciar.py --stop
+
+  El script verifica requisitos, levanta Docker, espera a que
+  las BDs respondan, sincroniza schemas con prisma db push,
+  instala dependencias si hace falta, y lanza cada servicio en
+  su propia ventana de PowerShell para ver los logs.
+
+
+================================================================
+  14. UN POCO DE GLOSARIO PARA QUE SE ENTIENDA
+================================================================
+
+  CURP       Clave Unica de Registro de Poblacion. 18 caracteres
+             unicos por persona en Mexico. La 4ta letra es la
+             inicial del nombre.
+
+  INE        Credencial oficial de elector en Mexico.
+
+  ECDSA      Elliptic Curve Digital Signature Algorithm. Tipo de
+             firma digital con llaves mas pequenias que RSA.
+
+  P-256      Una curva eliptica estandar (la mas comun en TLS y
+             en certificados de Let's Encrypt).
+
+  JWT        JSON Web Token. Un token de sesion firmado que se
+             puede verificar sin consultar a una BD central.
+
+  PEM        Formato de texto para guardar llaves criptograficas
+             (empieza con -----BEGIN PUBLIC KEY-----).
+
+  JWK        JSON Web Key. Formato JSON para llaves criptograficas.
+             Es el que usamos en el archivo descargable.
+
+  Microservicio   Servidor pequenio con UNA responsabilidad. En
+                  vez de un solo programa gigante, varios chicos.
+
+  Event-driven    Patron donde los servicios reaccionan a eventos
+                  publicados por otros, sin llamadas directas.
+
+  ORM             Object-Relational Mapper. Traduce entre objetos
+                  de programacion y filas de BD. Aqui usamos Prisma.
+
+  Presigned URL   URL temporal y firmada que permite subir o
+                  descargar un archivo de un servidor S3 sin
+                  necesitar credenciales globales.
+
+  CORS            Cross-Origin Resource Sharing. Mecanismo del
+                  navegador que controla que dominios pueden
+                  hacer peticiones a otros.
+
+  Kill switch     Funcion para bloquear remotamente algo (en
+                  nuestro caso, la linea telefonica) cuando se
+                  detecta algo sospechoso.

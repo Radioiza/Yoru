@@ -1,0 +1,98 @@
+services:
+  # ============================================
+  # POSTGRES — una BD por microservicio
+  # ============================================
+  auth-db:
+    image: postgres:16-alpine
+    container_name: yoru-auth-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: yoru
+      POSTGRES_PASSWORD: yoru_dev
+      POSTGRES_DB: auth
+    ports:
+      - "5433:5432"
+    volumes:
+      - auth-db-data:/var/lib/postgresql/data
+
+  pki-db:
+    image: postgres:16-alpine
+    container_name: yoru-pki-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: yoru
+      POSTGRES_PASSWORD: yoru_dev
+      POSTGRES_DB: pki
+    ports:
+      - "5434:5432"
+    volumes:
+      - pki-db-data:/var/lib/postgresql/data
+
+  kyc-db:
+    image: postgres:16-alpine
+    container_name: yoru-kyc-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: yoru
+      POSTGRES_PASSWORD: yoru_dev
+      POSTGRES_DB: kyc
+    ports:
+      - "5435:5432"
+    volumes:
+      - kyc-db-data:/var/lib/postgresql/data
+
+  telecom-db:
+    image: postgres:16-alpine
+    container_name: yoru-telecom-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: yoru
+      POSTGRES_PASSWORD: yoru_dev
+      POSTGRES_DB: telecom
+    ports:
+      - "5436:5432"
+    volumes:
+      - telecom-db-data:/var/lib/postgresql/data
+
+  # ============================================
+  # RABBITMQ — broker de eventos
+  # ============================================
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: yoru-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: yoru
+      RABBITMQ_DEFAULT_PASS: yoru_dev
+    ports:
+      - "5672:5672"     # AMQP
+      - "15672:15672"   # UI management — http://localhost:15672
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+
+  # ============================================
+  # MINIO — S3-compatible para documentos KYC
+  # ============================================
+  minio:
+    image: minio/minio:latest
+    container_name: yoru-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: yoru
+      MINIO_ROOT_PASSWORD: yoru_dev_minio
+      # CORS para que el navegador pueda hacer PUT directo a las presigned URLs.
+      MINIO_API_CORS_ALLOW_ORIGIN: "http://localhost:5173,http://localhost:5174"
+    ports:
+      - "9000:9000"     # API S3
+      - "9001:9001"     # UI — http://localhost:9001
+    volumes:
+      - minio-data:/data
+
+volumes:
+  auth-db-data:
+  pki-db-data:
+  kyc-db-data:
+  telecom-db-data:
+  rabbitmq-data:
+  minio-data:

@@ -1,0 +1,56 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id         String      @id @default(uuid())
+  curp       String      @unique
+  telefono   String      @unique
+  nombre     String?     // ¿Cómo te gusta que te digan? — opcional
+  estado     EstadoUser  @default(pendiente)
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  sessions   Session[]
+  challenges Challenge[]
+
+  @@map("users")
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  token     String   @unique
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model Challenge {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  nonce     String
+  usado     Boolean  @default(false)
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("challenges")
+}
+
+enum EstadoUser {
+  pendiente
+  activo
+  bloqueado
+}

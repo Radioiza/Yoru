@@ -1,0 +1,73 @@
+# ============================================================
+# YORU - .gitignore
+# Archivos y carpetas que NO deben subirse a git.
+# ============================================================
+
+# -------- Dependencias --------
+node_modules/
+**/node_modules/
+
+# -------- Variables de entorno (contienen secretos) --------
+# Los .env.example sí se suben para documentar el formato.
+.env
+.env.local
+.env.*.local
+**/.env
+**/.env.local
+
+# -------- Build / dist --------
+dist/
+build/
+**/dist/
+**/build/
+.next/
+.cache/
+
+# -------- Logs --------
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+**/npm-debug.log*
+
+# -------- Bases de datos / volúmenes locales --------
+*.db
+*.sqlite
+*.sqlite3
+pgdata/
+
+# -------- Archivos de llaves de usuarios (sensibles) --------
+yoru-llave-*.json
+
+# -------- Caches de Python --------
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.python-version
+
+# -------- Sistema operativo --------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# -------- Editores --------
+.vscode/
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
+
+# -------- Prisma --------
+# Las migraciones SÍ se suben, pero el client generado no.
+**/node_modules/.prisma/
+**/generated/
+
+# -------- Otros --------
+.parcel-cache/
+coverage/
+.nyc_output/
+*.tsbuildinfo

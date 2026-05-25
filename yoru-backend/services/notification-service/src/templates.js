@@ -1,0 +1,97 @@
+/**
+ * Catálogo de plantillas: una por cada routing key que nos interesa.
+ *
+ * Cada plantilla recibe el payload del evento y devuelve:
+ *   { canal, severidad, asunto, cuerpo }
+ *
+ * canal:     'email' | 'sms' | 'push'  (informativo, todo se loguea igual)
+ * severidad: 'info' | 'warn' | 'critical'
+ */
+export const TEMPLATES = {
+
+  'auth.user_created': (p) => ({
+    canal: 'email',
+    severidad: 'info',
+    asunto: '¡Bienvenido a Yoru!',
+    cuerpo:
+      `Hola, tu cuenta fue creada correctamente.\n` +
+      `Teléfono: ${p.telefono}\n` +
+      `CURP: ${p.curp}\n\n` +
+      `Continúa con la verificación de identidad para activar tu línea.`,
+  }),
+
+  'kyc.completed': (p) => ({
+    canal: 'email',
+    severidad: 'info',
+    asunto: '✅ Tu identidad fue verificada',
+    cuerpo:
+      `Tu solicitud KYC fue aprobada con un score de ${p.scoreMatch ?? 'N/A'}.\n` +
+      `Tu línea quedará activa en breve.`,
+  }),
+
+  'kyc.rejected': (p) => ({
+    canal: 'email',
+    severidad: 'warn',
+    asunto: '❌ Solicitud KYC rechazada',
+    cuerpo:
+      `Tu solicitud KYC fue rechazada.\n` +
+      `Motivo: ${p.motivoRechazo ?? 'sin especificar'}\n\n` +
+      `Puedes intentarlo de nuevo con documentos más claros.`,
+  }),
+
+  'pki.key_registered': (p) => ({
+    canal: 'email',
+    severidad: 'info',
+    asunto: '🔐 Nueva llave criptográfica registrada',
+    cuerpo:
+      `Se registró una nueva llave en tu cuenta.\n` +
+      `ID: ${p.publicKeyId}\n` +
+      `Curva: ${p.curva}\n\n` +
+      `Si no fuiste tú, contáctanos de inmediato.`,
+  }),
+
+  'pki.new_key_attempt': (p) => ({
+    canal: 'email',
+    severidad: 'critical',
+    asunto: '⚠️ ALERTA: Intento de registrar nueva llave',
+    cuerpo:
+      `Se detectó un intento de registrar una nueva llave en tu cuenta.\n` +
+      `Llave previa: ${p.previousKeyId}\n` +
+      `IP: ${p.ip}\n` +
+      `User-Agent: ${p.userAgent ?? 'desconocido'}\n\n` +
+      `Tu línea fue suspendida preventivamente por el kill switch.`,
+  }),
+
+  'pki.key_revoked': (p) => ({
+    canal: 'email',
+    severidad: 'warn',
+    asunto: '🔒 Llave revocada',
+    cuerpo: `La llave ${p.publicKeyId} fue marcada como revocada.`,
+  }),
+
+  'auth.failed_attempt': (p) => ({
+    canal: 'email',
+    severidad: 'warn',
+    asunto: '⚠️ Intento de autenticación fallido',
+    cuerpo:
+      `Se registró un intento de firma inválido en tu cuenta.\n` +
+      `Motivo: ${p.motivo ?? 'desconocido'}\n\n` +
+      `Si no fuiste tú, considera revocar tu llave.`,
+  }),
+
+  'telecom.kill_switch_activado': (p) => ({
+    canal: 'sms',
+    severidad: 'critical',
+    asunto: '🚨 Tu línea fue bloqueada',
+    cuerpo:
+      `Tu línea ${p.telefono} fue bloqueada (kill switch).\n` +
+      `Motivo: ${p.motivo}\n\n` +
+      `Contacta a soporte para restaurarla.`,
+  }),
+};
+
+export function renderizar(routingKey, payload) {
+  const template = TEMPLATES[routingKey];
+  if (!template) return null;
+  return { ...template(payload), routingKey, payload };
+}
