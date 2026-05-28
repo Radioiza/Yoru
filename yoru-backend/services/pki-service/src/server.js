@@ -3,6 +3,7 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import pkiRoutes from './routes/pki.js';
 import { connectBroker } from './broker.js';
+import { registrarConsumers } from './consumers.js';
 import { prisma } from './prisma.js';
 
 const app = Fastify({ logger: { level: 'info' } });
@@ -20,7 +21,8 @@ app.get('/health', async () => ({
 
 await app.register(pkiRoutes, { prefix: '/api/pki' });
 
-await connectBroker(process.env.RABBITMQ_URL);
+const ch = await connectBroker(process.env.RABBITMQ_URL);
+if (ch) await registrarConsumers();
 
 const port = Number(process.env.PORT ?? 3002);
 const host = process.env.HOST ?? '0.0.0.0';

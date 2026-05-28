@@ -4,9 +4,9 @@ import { requireAuth } from '../middleware.js';
 
 export default async function telecomRoutes(fastify) {
 
-  // POST /api/telecom/lineas — vincula una línea a un usuario
+  // POST /api/telecom/lineas
   fastify.post('/lineas', async (request, reply) => {
-    const { telefono, userId, publicKeyId } = request.body ?? {};
+    const { telefono, userId, publicKeyId, committed = false } = request.body ?? {};
 
     if (!telefono || !userId) {
       return reply.code(400).send({ ok: false, error: 'telefono y userId requeridos.' });
@@ -18,6 +18,7 @@ export default async function telecomRoutes(fastify) {
           telefono,
           userId,
           publicKeyId: publicKeyId ?? null,
+          committed,
           eventos: {
             create: { tipo: 'vinculada', detalle: { origen: 'api' } },
           },
@@ -30,7 +31,7 @@ export default async function telecomRoutes(fastify) {
       if (err.code === 'P2002') {
         return reply.code(409).send({
           ok: false,
-          error: 'Este teléfono ya está vinculado.',
+          error: 'Este telefono ya esta vinculado.',
         });
       }
       throw err;
@@ -44,20 +45,61 @@ export default async function telecomRoutes(fastify) {
       where: { telefono },
       include: { eventos: { orderBy: { createdAt: 'desc' }, take: 20 } },
     });
-    if (!linea) return reply.code(404).send({ ok: false, error: 'Línea no encontrada.' });
+    if (!linea || !linea.committed) return reply.code(404).send({ ok: false, error: 'Linea no encontrada.' });
     return { ok: true, linea };
   });
 
-  // POST /api/telecom/lineas/:telefono/kill-switch — activa kill switch (PROTEGIDO)
-  // Solo el dueño de la línea puede activarlo manualmente.
+  // GET /api/telecom/lineas/by-user/:userId — lista todas las lineas del usuario.
+  fastify.get('/lineas/by-user/:userId', async (request) => {
+    const { userId } = request.params;
+    const lineas = await prisma.linea.findMany({
+      where: { userId, committed: true },
+      include: { eventos: { orderBy: { createdAt: 'desc' }, take: 5 } },
+      orderBy: { fechaVinculacion: 'asc' },
+    });
+    // Diagnostico: si hay lineas para ese userId pero todas con committed=false,
+    // las contamos aparte para distinguir entre "no existen" y "no estan committeadas".
+    const total = await prisma.linea.count({ where: { userId } });
+    console.log(`[by-user] userId=${userId} -> ${lineas.length} commiteadas (total ${total})`);
+    return { ok: true, lineas };
+  });
+
+  // POST /api/telecom/lineas/:telefono/activar — activa una linea (usado por add-linea)
+  fastify.post('/lineas/:telefono/activar', async (request, reply) => {
+    const { telefono } = request.params;
+    const linea = await prisma.linea.findUnique({ where: { telefono } });
+    if (!linea) return reply.code(404).send({ ok: false, error: 'No existe.' });
+
+    const updated = await prisma.linea.update({
+      where: { telefono },
+      data: {
+        estado: 'activa',
+        eventos: { create: { tipo: 'activada', detalle: { origen: 'add-linea' } } },
+      },
+    });
+    return { ok: true, linea: updated };
+  });
+
+  // POST /api/telecom/lineas/by-user/:userId/desvincular
+  // Desvincula (borra) TODAS las lineas del usuario. Usado por el flujo de revocacion.
+  fastify.post('/lineas/by-user/:userId/desvincular', async (request) => {
+    const { userId } = request.params;
+    const lineas = await prisma.linea.findMany({ where: { userId } });
+    const count = lineas.length;
+    await prisma.linea.deleteMany({ where: { userId } });
+    publishEvent('telecom.lineas_desvinculadas', { userId, cantidad: count });
+    return { ok: true, desvinculadas: count };
+  });
+
+  // POST /api/telecom/lineas/:telefono/kill-switch (PROTEGIDO)
   fastify.post('/lineas/:telefono/kill-switch', { preHandler: requireAuth }, async (request, reply) => {
     const { telefono } = request.params;
     const { motivo } = request.body ?? {};
 
     const linea = await prisma.linea.findUnique({ where: { telefono } });
-    if (!linea) return reply.code(404).send({ ok: false, error: 'Línea no encontrada.' });
+    if (!linea) return reply.code(404).send({ ok: false, error: 'Linea no encontrada.' });
     if (linea.userId !== request.user.sub) {
-      return reply.code(403).send({ ok: false, error: 'No puedes bloquear una línea ajena.' });
+      return reply.code(403).send({ ok: false, error: 'No puedes bloquear una linea ajena.' });
     }
 
     const actualizada = await prisma.linea.update({
@@ -82,13 +124,13 @@ export default async function telecomRoutes(fastify) {
     return { ok: true, linea: actualizada };
   });
 
-  // POST /api/telecom/lineas/:telefono/unblock — quita un kill switch (PROTEGIDO)
+  // POST /api/telecom/lineas/:telefono/unblock (PROTEGIDO)
   fastify.post('/lineas/:telefono/unblock', { preHandler: requireAuth }, async (request, reply) => {
     const { telefono } = request.params;
     const linea = await prisma.linea.findUnique({ where: { telefono } });
-    if (!linea) return reply.code(404).send({ ok: false, error: 'Línea no encontrada.' });
+    if (!linea) return reply.code(404).send({ ok: false, error: 'Linea no encontrada.' });
     if (linea.userId !== request.user.sub) {
-      return reply.code(403).send({ ok: false, error: 'No puedes desbloquear una línea ajena.' });
+      return reply.code(403).send({ ok: false, error: 'No puedes desbloquear una linea ajena.' });
     }
 
     const actualizada = await prisma.linea.update({

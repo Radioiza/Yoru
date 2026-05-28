@@ -8,13 +8,39 @@ datasource db {
 }
 
 model User {
-  id         String      @id @default(uuid())
-  curp       String      @unique
-  telefono   String      @unique
-  nombre     String?     // ¿Cómo te gusta que te digan? — opcional
-  estado     EstadoUser  @default(pendiente)
-  createdAt  DateTime    @default(now())
-  updatedAt  DateTime    @updatedAt
+  id            String      @id @default(uuid())
+  curp          String      @unique
+  telefono      String      @unique
+  email         String?     @unique
+  passwordHash  String?     @map("password_hash")
+  passwordSalt  String?     @map("password_salt")
+  nombre        String?
+  estado        EstadoUser  @default(pendiente)
+
+  // Solo cuando committed=true se considera el alta "real".
+  committed     Boolean     @default(false)
+  emailVerified Boolean     @default(false) @map("email_verified")
+
+  // Codigo de verificacion de email (5 digitos) durante el registro.
+  emailVerificationCode      String?   @map("email_verification_code")
+  emailVerificationExpira    DateTime? @map("email_verification_expira")
+  emailVerificationLastSent  DateTime? @map("email_verification_last_sent")
+
+  // Datos pendientes del registro (se mueven a kyc/pki/telecom al verificar email)
+  pendingIneS3        String?  @map("pending_ine_s3")
+  pendingSelfieS3     String?  @map("pending_selfie_s3")
+  pendingPublicKeyPem String?  @map("pending_public_key_pem") @db.Text
+
+  // Codigo para revocar llave (5 digitos)
+  codigoRevocacion        String?   @map("codigo_revocacion")
+  codigoRevocacionExpira  DateTime? @map("codigo_revocacion_expira")
+
+  // Token corto para flujo de recuperacion (validado por firma .pem)
+  recoveryToken        String?   @map("recovery_token")
+  recoveryTokenExpira  DateTime? @map("recovery_token_expira")
+
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
 
   sessions   Session[]
   challenges Challenge[]
@@ -39,6 +65,7 @@ model Challenge {
   id        String   @id @default(uuid())
   userId    String   @map("user_id")
   nonce     String
+  proposito String   @default("login")          // login | recovery
   usado     Boolean  @default(false)
   expiresAt DateTime @map("expires_at")
   createdAt DateTime @default(now()) @map("created_at")

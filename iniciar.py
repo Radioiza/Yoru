@@ -26,8 +26,12 @@ Lo que hace por debajo:
 Uso:
   python iniciar.py             arrancar todo
   python iniciar.py --stop      detener docker y cerrar ventanas YORU
+  python iniciar.py --reset     bajar docker con -v (borra volumenes) y volver a levantar
   python iniciar.py --no-browser arrancar sin abrir navegador
   python iniciar.py --help      mostrar ayuda
+
+  Tip: usa --reset cuando hayas cambiado un schema de Prisma de forma
+  destructiva o veas errores tipo "column X does not exist".
 
 Requisitos:
   - Python 3.8+
@@ -130,6 +134,22 @@ def esperar_puerto(host, puerto, timeout=60):
     return False
 
 
+def esperar_postgres_listo(container_name, timeout=60):
+    """Espera a que `pg_isready` responda dentro del contenedor de Postgres.
+    Acepta TCP no garantiza que el motor pueda atender queries (sobre todo
+    en arranques limpios). Esto si lo garantiza."""
+    inicio = time.time()
+    while time.time() - inicio < timeout:
+        r = subprocess.run(
+            f'docker exec {container_name} pg_isready -U yoru',
+            shell=True, capture_output=True, text=True,
+        )
+        if r.returncode == 0 and 'accepting connections' in (r.stdout or ''):
+            return True
+        time.sleep(1)
+    return False
+
+
 # ===================== ACCIONES =====================
 def levantar_docker():
     p(C.BLUE, "\nLevantando contenedores (Postgres x4, RabbitMQ, MinIO)...")
@@ -146,13 +166,30 @@ def levantar_docker():
         return False
     p(C.GREEN, "  [OK]  docker compose up -d completado")
 
-    p(C.BLUE, "  Esperando a que las BDs respondan en su puerto...")
+    # Mapa servicio -> nombre del contenedor (lo que usa docker-compose).
+    container_map = {
+        "auth-service":    "yoru-auth-db",
+        "pki-service":     "yoru-pki-db",
+        "kyc-service":     "yoru-kyc-db",
+        "telecom-service": "yoru-telecom-db",
+    }
+
+    p(C.BLUE, "  Esperando a que las BDs acepten conexiones TCP...")
     for nombre, _, tiene_bd, puerto_bd in SERVICIOS:
         if tiene_bd:
-            if esperar_puerto("localhost", puerto_bd, timeout=60):
-                p(C.GREEN, f"    [OK] {nombre} BD lista en puerto {puerto_bd}")
-            else:
+            if not esperar_puerto("localhost", puerto_bd, timeout=60):
                 p(C.RED, f"    [X]  {nombre} BD no respondio en puerto {puerto_bd}")
+                return False
+            p(C.GREEN, f"    [OK] {nombre} TCP listo en puerto {puerto_bd}")
+
+    p(C.BLUE, "  Esperando a que Postgres acepte queries (pg_isready)...")
+    for nombre, _, tiene_bd, _ in SERVICIOS:
+        if tiene_bd:
+            container = container_map[nombre]
+            if esperar_postgres_listo(container, timeout=60):
+                p(C.GREEN, f"    [OK] {nombre} Postgres listo")
+            else:
+                p(C.RED, f"    [X]  {nombre} Postgres NO listo tras 60s")
                 return False
 
     if esperar_puerto("localhost", 5672, timeout=60):
@@ -181,30 +218,69 @@ def setup_servicio(nombre, tiene_bd):
         # Si agregamos un campo nuevo al schema, lo aplica automaticamente.
         # --accept-data-loss permite ALTER TABLE en cambios destructivos.
         # --skip-generate evita regenerar el cliente aqui (lo hacemos abajo).
+        #
+        # Retry con backoff: en arranques limpios (--reset) Postgres puede
+        # tardar varios segundos despues de aceptar conexiones TCP antes de
+        # estar listo para queries reales. Hacemos hasta 6 intentos.
         p(C.YELLOW, f"  Sincronizando base de datos de {nombre}...")
-        r = subprocess.run(
-            "npx prisma db push --accept-data-loss --skip-generate",
-            cwd=str(svc_dir),
-            shell=True,
-            capture_output=True,
-            text=True,
-        )
-        if r.returncode != 0:
+        ok_push = False
+        last_err = ""
+        for intento in range(1, 7):
+            r = subprocess.run(
+                "npx prisma db push --accept-data-loss --skip-generate",
+                cwd=str(svc_dir),
+                shell=True,
+                capture_output=True,
+                text=True,
+            )
+            if r.returncode == 0:
+                ok_push = True
+                break
+            last_err = (r.stderr or r.stdout or "").strip()
+            if "P1001" in last_err or "Can't reach database" in last_err:
+                espera = min(2 * intento, 8)
+                p(C.YELLOW, f"    BD aun no acepta queries (intento {intento}/6). Reintentando en {espera}s...")
+                time.sleep(espera)
+                continue
+            break
+        if not ok_push:
             p(C.RED, f"    [X] Error en prisma db push de {nombre}")
-            print(r.stderr[-800:])
+            print(last_err[-800:])
             return False
 
         # Regenerar el Prisma Client por si hubo cambios en el schema.
-        r2 = subprocess.run(
-            "npx prisma generate",
-            cwd=str(svc_dir),
-            shell=True,
-            capture_output=True,
-            text=True,
-        )
-        if r2.returncode != 0:
+        # En Windows, si todavia hay un node aferrado al query_engine.dll, el
+        # rename del .tmp falla con EPERM. Reintentamos varias veces.
+        ok_gen = False
+        last_err2 = ""
+        for intento in range(1, 6):
+            r2 = subprocess.run(
+                "npx prisma generate",
+                cwd=str(svc_dir),
+                shell=True,
+                capture_output=True,
+                text=True,
+            )
+            if r2.returncode == 0:
+                ok_gen = True
+                break
+            last_err2 = (r2.stderr or r2.stdout or "").strip()
+            if "EPERM" in last_err2 or "operation not permitted" in last_err2:
+                p(C.YELLOW, f"    DLL bloqueada (intento {intento}/5). Cerrando procesos node residuales y reintentando...")
+                # Intento agresivo: matar cualquier "YORU - *" sobrante y esperar.
+                for patron in ('YORU - *', 'YORU Studio - *'):
+                    subprocess.run(
+                        f'taskkill /F /FI "WINDOWTITLE eq {patron}"',
+                        shell=True, capture_output=True, text=True,
+                    )
+                time.sleep(2 * intento)
+                continue
+            break
+        if not ok_gen:
             p(C.RED, f"    [X] Error en prisma generate de {nombre}")
-            print(r2.stderr[-800:])
+            print(last_err2[-800:])
+            p(C.YELLOW, "        Posible causa: hay otro node corriendo con la DLL cargada.")
+            p(C.YELLOW, "        Cierra TODAS las ventanas con titulo 'YORU - *' y vuelve a ejecutar.")
             return False
 
     p(C.GREEN, f"  [OK]  {nombre}")
@@ -317,7 +393,8 @@ def main():
         description="YORU - Launcher automatico del stack completo.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--stop", action="store_true", help="Detener docker compose y ventanas")
+    parser.add_argument("--stop",  action="store_true", help="Detener docker compose y ventanas")
+    parser.add_argument("--reset", action="store_true", help="Bajar docker con -v (BORRA datos) y volver a arrancar")
     parser.add_argument("--no-browser", action="store_true", help="No abrir el navegador al terminar")
     args = parser.parse_args()
 
@@ -326,6 +403,20 @@ def main():
     if args.stop:
         detener()
         return
+
+    if args.reset:
+        p(C.YELLOW, "\n[reset] Cerrando ventanas YORU previas (para liberar DLLs de Prisma)...")
+        # Cierra ventanas con titulo "YORU - *" y "YORU Studio - *" igual que --stop.
+        for patron in ('YORU - *', 'YORU Studio - *'):
+            subprocess.run(
+                f'taskkill /F /FI "WINDOWTITLE eq {patron}"',
+                shell=True, capture_output=True, text=True,
+            )
+        # Dar un par de segundos a Windows para que libere los handles.
+        time.sleep(2)
+        p(C.YELLOW, "[reset] Bajando docker y BORRANDO volumenes...")
+        subprocess.run("docker compose down -v", cwd=str(BACKEND_DIR), shell=True)
+        p(C.GREEN, "  [OK] Volumenes borrados. Continuando con arranque limpio...")
 
     # ----- PASO 1: prerequisites -----
     p(C.BLUE, "\n[1/5] Verificando requisitos...")

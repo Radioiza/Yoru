@@ -3,227 +3,209 @@
 ================================================================
 
 Necesitas tener instalado:
-  - Docker Desktop (corriendo, ícono de ballena en la barra)
+  - Docker Desktop (corriendo, icono de ballena en la barra)
   - Node.js 20 o superior
-  - Python 3.8+ (opcional, solo para el script automático)
+  - Python 3.8+ (opcional, solo para el script automatico)
 
 
 ================================================================
-  MÉTODO RÁPIDO (RECOMENDADO) - UN SOLO COMANDO
+  METODO RAPIDO (RECOMENDADO) - UN SOLO COMANDO
 ================================================================
 
-Si tienes Python instalado (viene preinstalado en Windows 11):
+  Doble-click "Iniciar Yoru.bat"  o  python iniciar.py
 
-  Opción A: Doble-click al archivo "Iniciar Yoru.bat"
-
-  Opción B: Desde PowerShell:
-            cd C:\Users\carlo\OneDrive\Escritorio\index_tuto
-            python iniciar.py
-
-El script hace TODO automáticamente:
+El script hace TODO automaticamente:
   1. Verifica Docker y Node
   2. Levanta los 6 contenedores (Postgres x4, RabbitMQ, MinIO)
-  3. Espera a que las BDs respondan en su puerto
-  4. La primera vez: npm install + prisma db push en cada servicio
-  5. Las siguientes veces: si cambias el schema, db push lo aplica
-     automáticamente (no tienes que correr migraciones a mano)
-  6. Abre 6 ventanas de PowerShell (1 por microservicio + frontend)
-  7. Abre el navegador en http://localhost:5173
+  3. Espera a que cada Postgres acepte queries (pg_isready)
+  4. Aplica el schema (prisma db push), con retry por si la BD aun no atiende
+  5. Lanza los 5 microservicios + 4 Prisma Studio + frontend
+  6. Abre el navegador
 
-NOTA: si después de un cambio de schema sigues viendo errores como
-"Column X does not exist", ejecuta:
-  python iniciar.py --stop
-  python iniciar.py
-La segunda vuelta aplica el schema actualizado a la BD.
-
-Para detener todo:
-  - Doble-click "Detener Yoru.bat", o
-  - python iniciar.py --stop
+Para detener:    python iniciar.py --stop
+Para resetear:   python iniciar.py --reset
+                 (cierra ventanas YORU, borra volumenes y vuelve a arrancar
+                  desde cero — necesario tras cambios destructivos de schema)
 
 
 ================================================================
-  MÉTODO MANUAL (POR SI EL SCRIPT FALLA)
+  IMPORTANTE: CAMBIOS RECIENTES
 ================================================================
 
-================================================================
-  RUTA RAÍZ DEL PROYECTO
-================================================================
+El backend tiene varios campos NUEVOS en los schemas (email, password,
+codigo de verificacion, etc). Si vienes de una version anterior:
 
-C:\Users\carlo\OneDrive\Escritorio\index_tuto
+  python iniciar.py --reset
 
-Dentro hay 2 carpetas:
-  - yoru-backend       (los 4 microservicios + docker)
-  - registro\registro  (el frontend React)
+Esto bajara los volumenes (BORRA datos) y arrancara limpio. Sin --reset
+veras errores como "column email does not exist".
 
 
 ================================================================
-  PASO 1 — ASEGURAR QUE DOCKER DESKTOP ESTÉ CORRIENDO
+  FLUJOS DE LA APP (LO QUE PUEDES PROBAR)
 ================================================================
 
-Abre Docker Desktop desde el menú de inicio. Espera a que el
-ícono de la ballena en la barra de tareas deje de animarse.
+------------------------------------------------------------
+  1. REGISTRO DE UN USUARIO NUEVO
+------------------------------------------------------------
 
-Verifica desde PowerShell:
+  - Home -> Registrarme
+  - Formulario: telefono (10 dig), CURP (18), CORREO, CONTRASENA (8+),
+    nombre (opcional). Nada se guarda aun.
+  - Biometria: PDF INE + selfie con la camara. Sigue en memoria.
+  - Generacion: clic "Generar mi Identidad Local"
+      * Sube INE + selfie a MinIO
+      * Genera par ECDSA P-256 localmente
+      * Crea un draft del usuario en la BD y manda un codigo de 5 digitos
+        por correo
+      * Te deja descargar tu archivo de llave en formato .pem
+  - Pantalla "Confirma tu correo":
+      * Ingresa el codigo de 5 digitos (valido 5 min)
+      * Si no te llego, "Reenviar codigo" pasados 60 segundos
+      * Al validar -> commit atomico: KYC + PKI + Telecom se enlazan al user
+  - Te manda al Login.
 
-  docker --version
-  docker compose version
+  Si cierras antes de validar el codigo, NADA queda persistente. El draft
+  se purga automaticamente despues de 30 min.
 
-Si te da errores, abre Docker Desktop y vuelve a intentar.
+  En modo demo, el codigo aparece en la ventana del notification-service
+  y tambien en http://localhost:3005/notifications
 
+------------------------------------------------------------
+  2. INICIO DE SESION
+------------------------------------------------------------
 
-================================================================
-  PASO 2 — LEVANTAR LA INFRAESTRUCTURA (Postgres x4 + RabbitMQ + MinIO)
-================================================================
+  - Home -> Iniciar sesion
+  - Correo + contrasena -> Iniciar sesion -> Mi Cuenta.
 
-Abre PowerShell y corre:
+------------------------------------------------------------
+  3. MI CUENTA
+------------------------------------------------------------
 
-  cd C:\Users\carlo\OneDrive\Escritorio\index_tuto\yoru-backend
-  docker compose up -d
+  - Avatar: por default tu selfie del registro. Toca 📷 para cambiarla
+    a otra foto o a una imagen de archivo. La selfie original NO se
+    modifica (es prueba de identidad).
+  - Mis lineas: lista de telefonos vinculados a tu cuenta.
+    Boton "+ Agregar otra" para vincular un nuevo numero (NO requiere
+    repetir KYC; los documentos siguen en tu cuenta).
+  - Por cada linea: "Reportar robo/perdida" (kill switch) o "Reactivar".
+  - "Revocar mi llave" -> flujo de revocacion.
 
-Verifica que los 6 contenedores estén arriba:
+------------------------------------------------------------
+  4. REVOCACION DE LLAVE
+------------------------------------------------------------
 
-  docker compose ps
+  - Confirmacion en pantalla con lista de consecuencias.
+  - Aceptas -> se envia un codigo de 5 digitos por correo, se eliminan tus
+    telefonos y se revocan tus llaves activas.
+  - Ingresas el codigo -> creas nuevo par de llaves -> descargas el nuevo
+    archivo .pem.
+  - Tras esto debes iniciar sesion otra vez (correo+contrasena), y luego
+    agregar tus lineas de nuevo.
 
-Debes ver:
-  yoru-auth-db      (puerto 5433)
-  yoru-pki-db       (puerto 5434)
-  yoru-kyc-db       (puerto 5435)
-  yoru-telecom-db   (puerto 5436)
-  yoru-rabbitmq     (puerto 5672, UI en 15672)
-  yoru-minio        (puerto 9000, UI en 9001)
+------------------------------------------------------------
+  5. RECUPERACION (OLVIDE MI CONTRASENA O MI CORREO)
+------------------------------------------------------------
 
-Todos deben decir "running" o "healthy".
+  - Login -> "¿Olvidaste tu contrasena o correo?"
+  - Sube tu archivo .pem. El frontend lee el bloque YORU IDENTITY,
+    extrae tu userId, pide un challenge y lo firma con tu llave privada.
+  - Si la firma valida contra tu llave publica registrada, el backend
+    te muestra tu correo actual y te da un recoveryToken de 10 min.
+  - Puedes establecer una nueva contrasena, un nuevo correo, ambas o
+    ninguna (si solo querias recordar tu correo).
+  - Luego -> Login normal.
 
+------------------------------------------------------------
+  6. ELIMINAR UN USUARIO (administrativo)
+------------------------------------------------------------
 
-================================================================
-  PASO 3 — ARRANCAR LOS 5 MICROSERVICIOS
-================================================================
+  DELETE http://localhost:3001/api/auth/users/<userId>
 
-Necesitas 5 TERMINALES POWERSHELL ABIERTAS EN PARALELO.
-Una por servicio. Cada terminal se queda viva mientras trabajas.
-
-----------------------------------------------------------------
-  TERMINAL 1 — AUTH SERVICE (puerto 3001)
-----------------------------------------------------------------
-
-  cd C:\Users\carlo\OneDrive\Escritorio\index_tuto\yoru-backend\services\auth-service
-  npm run dev
-
-----------------------------------------------------------------
-  TERMINAL 2 — PKI SERVICE (puerto 3002)
-----------------------------------------------------------------
-
-  cd C:\Users\carlo\OneDrive\Escritorio\index_tuto\yoru-backend\services\pki-service
-  npm run dev
-
-----------------------------------------------------------------
-  TERMINAL 3 — KYC SERVICE (puerto 3003)
-----------------------------------------------------------------
-
-  cd C:\Users\carlo\OneDrive\Escritorio\index_tuto\yoru-backend\services\kyc-service
-  npm run dev
-
-----------------------------------------------------------------
-  TERMINAL 4 — TELECOM SERVICE (puerto 3004)
-----------------------------------------------------------------
-
-  cd C:\Users\carlo\OneDrive\Escritorio\index_tuto\yoru-backend\services\telecom-service
-  npm run dev
-
-----------------------------------------------------------------
-  TERMINAL 5 — NOTIFICATION SERVICE (puerto 3005)
-----------------------------------------------------------------
-
-  cd C:\Users\carlo\OneDrive\Escritorio\index_tuto\yoru-backend\services\notification-service
-  npm install
-  npm run dev
-
-  (npm install solo la primera vez. Este servicio no tiene BD,
-  por eso no hay "prisma migrate".)
-
-
-En cada terminal debes ver al final un mensaje tipo:
-
-  {"msg":"<servicio> escuchando en http://0.0.0.0:300X"}
-  [broker] conectado a RabbitMQ
+  Emite auth.user_deleted en RabbitMQ. Los servicios con BD reaccionan
+  y purgan TODO lo relacionado (llaves PKI, KYC, lineas, objetos MinIO).
 
 
 ================================================================
-  PASO 4 — ARRANCAR EL FRONTEND REACT
+  EL ARCHIVO .pem
 ================================================================
 
-Abre una SEXTA terminal:
+Es un archivo de texto con 3 bloques PEM:
 
-  cd C:\Users\carlo\OneDrive\Escritorio\index_tuto\registro\registro
-  npm run dev
+  -----BEGIN YORU IDENTITY-----
+  <base64 JSON: userId, email, telefono, curp, ...>
+  -----END YORU IDENTITY-----
+  -----BEGIN PUBLIC KEY-----
+  <base64 SPKI>
+  -----END PUBLIC KEY-----
+  -----BEGIN PRIVATE KEY-----
+  <base64 PKCS8>
+  -----END PRIVATE KEY-----
 
-Vite te mostrará una URL, normalmente:
+Solo se usa para RECUPERAR la cuenta (olvido de contrasena/correo).
+Para iniciar sesion normalmente solo necesitas correo + contrasena.
 
-  http://localhost:5173
-
-Abre esa URL en Brave o Chrome.
-
-
-================================================================
-  PASO 5 — PROBAR EL FLUJO COMPLETO
-================================================================
-
-En la página web:
-
-  1. Pantalla Inicio -> botón "Registrarme"
-  2. Formulario -> ingresa:
-       Teléfono: 10 dígitos numéricos
-       CURP: 18 caracteres (ej. EAZJ031021HMCSXNA5)
-     Botón "Continuar"
-  3. Biometría:
-       - Sube un PDF cualquiera como INE
-       - Activa la cámara, toma una selfie
-       - Botón "Continuar"
-  4. Generación: botón "Generar mi Identidad Local"
-  5. Botón "Continuar al Reto de Firma"
-  6. Reto: botón "Firmar el reto"
-     -> debe aparecer "Firma verificada con éxito" en verde
-
-
-IMPORTANTE: cada vez que pruebes, usa un teléfono y CURP
-diferentes, porque los anteriores quedaron guardados en la BD
-y darán error 409 (duplicado).
+Nombre del archivo: <CURP>-privatekey.pem
 
 
 ================================================================
-  PASO 6 — VERIFICAR QUE TODO SE GUARDÓ (opcional)
+  ENVIO REAL DE CORREOS (GMAIL EN 4 PASOS)
 ================================================================
 
-Para inspeccionar las BDs visualmente, abre Prisma Studio
-en cada servicio (en una terminal nueva o cualquiera libre):
+Por default el notification-service esta en modo "jsonTransport": loguea
+el correo en su ventana pero NO lo envia. Asi viste el codigo de
+verificacion en la terminal pero NO te llego a tu Gmail real.
 
-  cd C:\Users\carlo\OneDrive\Escritorio\index_tuto\yoru-backend\services\auth-service
-  npx prisma studio
+Para que llegue a tu Gmail (recomendado para demo):
 
-Se abre en http://localhost:5555
+  1. Activa la verificacion en 2 pasos en tu cuenta Google.
+       https://myaccount.google.com/security
 
-Repite para pki-service, kyc-service, telecom-service.
-Cada uno usará un puerto distinto (5556, 5557, 5558).
+  2. Genera una "Contrasena de aplicacion" (16 caracteres):
+       https://myaccount.google.com/apppasswords
+       Aplicacion: "Otra" -> nombre: Yoru -> Generar
 
-Para ver los eventos de RabbitMQ:
+  3. Crea el archivo .env en:
+       yoru-backend\services\notification-service\.env
 
-  Abre http://localhost:15672
-  Usuario: yoru
-  Contraseña: yoru_dev
+     Con este contenido (reemplaza el correo y el app password):
 
+       RABBITMQ_URL="amqp://yoru:yoru_dev@localhost:5672"
+       PORT=3005
+       HOST=0.0.0.0
+       MAIL_TRANSPORT=smtp
+       SMTP_HOST=smtp.gmail.com
+       SMTP_PORT=587
+       SMTP_USER=tu.correo@gmail.com
+       SMTP_PASS=tuapppassword16chars
+       MAIL_FROM=Yoru <tu.correo@gmail.com>
 
-================================================================
-  PARA DETENER TODO
-================================================================
+     (SMTP_USER y MAIL_FROM deben ser EL MISMO correo: Gmail rechaza
+     enviar como otra direccion.)
 
-  1. En cada terminal de los servicios y del frontend: Ctrl + C
-  2. Para detener Docker:
-       cd C:\Users\carlo\OneDrive\Escritorio\index_tuto\yoru-backend
-       docker compose down
-     (Los datos se conservan en los volúmenes.)
+  4. Reinicia solo el notification-service:
+       - Cierra la ventana "YORU - notification-service"
+       - En PowerShell:
+            cd yoru-backend\services\notification-service
+            npm run dev
+       - O simplemente: python iniciar.py --stop && python iniciar.py
 
-  Para borrar TODO incluidas las BDs (empezar de cero):
-       docker compose down -v
+     Al arrancar veras:
+       [notifier] modo SMTP real: smtp.gmail.com:587 (from Yoru <...>)
+
+     En cada correo enviado veras:
+       [notifier] ✓ correo enviado a tu.correo@gmail.com (id ...)
+
+Si vas a usar otro proveedor (Outlook, Resend, Ethereal), copia la
+plantilla correspondiente de:
+   yoru-backend\services\notification-service\.env.example
+
+PROBLEMAS:
+  * "Username and Password not accepted" -> generaste la app password
+    pero copiaste con espacios. Quitalos. Verifica que la 2FA este activa.
+  * "Mail from not allowed" -> MAIL_FROM no coincide con SMTP_USER.
+  * Llega el correo pero a SPAM -> normal en demos sin SPF/DKIM. Marca
+    "no es spam" o usa un dominio propio en produccion.
 
 
 ================================================================
@@ -243,60 +225,60 @@ Para ver los eventos de RabbitMQ:
   Prisma Studio (telecom) http://localhost:5558
   RabbitMQ UI             http://localhost:15672  (yoru / yoru_dev)
   MinIO UI                http://localhost:9001   (yoru / yoru_dev_minio)
-  Prisma Studio (auth)    http://localhost:5555
-  Postgres auth           localhost:5433
-  Postgres pki            localhost:5434
-  Postgres kyc            localhost:5435
-  Postgres telecom        localhost:5436
+
+
+================================================================
+  ESTRUCTURA DEL FRONTEND
+================================================================
+
+  registro\registro\src\
+    main.jsx
+    Router.jsx                - Home / Tutorial / App
+    Home.jsx
+    Tutorial.jsx
+    App.jsx                   - orquestador (estado global + ruteo)
+    api.js                    - cliente HTTP + helpers cripto (.pem)
+    components\
+      Layout.jsx
+    screens\
+      Formulario.jsx          - paso 1 (telefono, curp, email, password)
+      Biometria.jsx           - paso 2 (INE + selfie)
+      Generacion.jsx          - paso 3 (genera .pem y prepara registro)
+      VerificarEmail.jsx      - paso 4 (codigo de 5 digitos por correo)
+      Login.jsx               - correo + contrasena
+      Cuenta.jsx              - panel autenticado
+      AgregarLinea.jsx        - nueva linea sin KYC
+      RevocarConfirmar.jsx
+      RevocarCodigo.jsx
+      RegenerarLlave.jsx
+      RecuperarLlave.jsx      - upload .pem + firma challenge
+      RecuperarCambiar.jsx    - ver correo / cambiar password o email
 
 
 ================================================================
   PROBLEMAS COMUNES
 ================================================================
 
-* "Failed to fetch" en el frontend
-  -> El servicio backend correspondiente NO está corriendo.
-     Revisa que tengas las 4 terminales activas con "npm run dev".
+* "Failed to fetch"
+  -> Un microservicio no esta corriendo.
 
-* "Can't reach database server at localhost:54XX"
-  -> Docker no está corriendo o los contenedores se cayeron.
-     Vuelve al PASO 2.
+* "Can't reach database server at localhost:54XX" / column ... no existe
+  -> python iniciar.py --reset
 
-* "docker: El término 'docker' no se reconoce"
-  -> Docker Desktop no está instalado o no está en el PATH.
-     Abre Docker Desktop primero. Si lo acabas de instalar,
-     reinicia la PowerShell para que herede el PATH.
+* "Credenciales invalidas" al iniciar sesion
+  -> No verificaste el codigo de email todavia, o la contrasena no es la
+     correcta. Si olvidaste cualquiera, usa "¿Olvidaste tu contrasena
+     o correo?" en la pantalla de login.
 
-* npm install falla con EPERM en system32
-  -> Te quedaste en C:\WINDOWS\system32. Asegúrate de hacer
-     "cd" a la carpeta correcta ANTES de cualquier npm.
+* "Codigo expirado" en la verificacion
+  -> Pasaron mas de 5 min. Usa "Reenviar codigo" (cooldown de 60s).
 
-* Cámara bloqueada en Brave
-  -> Clic en el ícono de candado de la URL -> Cámara -> Permitir
-     o ve a brave://settings/content/camera
+* "Espera Xs para reenviar" (HTTP 429)
+  -> Acabas de pedir un reenvio. Espera lo que dice el contador.
 
-* "Ya existe un registro con este valor" (409)
-  -> Usa otro teléfono y CURP, o limpia la BD desde Prisma Studio.
+* No me llego el codigo
+  -> En demo el correo no se envia por SMTP real. Revisa la ventana del
+     notification-service o http://localhost:3005/notifications
 
-
-================================================================
-  EN QUÉ ÍBAMOS
-================================================================
-
-Completado:
-  [x] 4 microservicios (auth, pki, kyc, telecom) con sus BDs
-  [x] RabbitMQ + eventos publicados y consumidos
-  [x] Frontend React con 6 pantallas:
-      inicio -> formulario -> biometría -> generación -> reto -> cuenta
-  [x] Flujo de registro completo end-to-end
-  [x] Reto de firma ECDSA P-256 funcionando
-  [x] notification-service (consume todos los eventos, sin BD)
-  [x] IndexedDB: llave privada no-extractable persistida en navegador
-  [x] JWT: login real con verificación de firma, middleware en 3 servicios
-  [x] Pantalla "Mi Cuenta" con kill switch / desbloquear / revocar llave
-  [x] MinIO uploads reales: presigned URLs, PUT directo desde navegador
-
-Pendientes (en orden recomendado):
-  [ ] Wire de las pantallas Home.jsx y Tutorial.jsx con Router.jsx
-  [ ] WebAuthn / biometría del navegador para desbloquear la llave
-  [ ] Revisar UI de KYC: ver documentos subidos (download-url endpoint)
+* Camara bloqueada
+  -> Clic en el candado de la URL -> Camara -> Permitir

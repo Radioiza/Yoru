@@ -13,6 +13,7 @@ model Linea {
   userId           String       @map("user_id")
   publicKeyId      String?      @map("public_key_id")
   estado           EstadoLinea  @default(vinculada)
+  committed        Boolean      @default(false)
   fechaVinculacion DateTime     @default(now()) @map("fecha_vinculacion")
   updatedAt        DateTime     @updatedAt @map("updated_at")
 
@@ -25,7 +26,7 @@ model Linea {
 model EventoLinea {
   id        String   @id @default(uuid())
   lineaId   String   @map("linea_id")
-  tipo      String                              // activada | kill_switched | desbloqueada | nueva_llave_detectada
+  tipo      String
   detalle   Json
   createdAt DateTime @default(now()) @map("created_at")
 

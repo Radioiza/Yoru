@@ -37,7 +37,11 @@ yarn-error.log*
 pgdata/
 
 # -------- Archivos de llaves de usuarios (sensibles) --------
+# Los .pem que los usuarios descargan al registrarse contienen su
+# llave privada. NUNCA deben subirse al repo.
 yoru-llave-*.json
+*-privatekey.pem
+*.pem
 
 # -------- Caches de Python --------
 __pycache__/

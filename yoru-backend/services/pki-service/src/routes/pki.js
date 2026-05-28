@@ -5,10 +5,11 @@ import { requireAuth } from '../middleware.js';
 export default async function pkiRoutes(fastify) {
 
   // POST /api/pki/keys
-  // Registra una llave pública para un usuario. Si ya tenía una activa,
-  // emite evento new_key_attempt para que telecom evalúe el kill switch.
+  // Registra una llave publica. Llamado desde el orquestador (auth/registro/finalizar)
+  // o desde el flujo de regeneracion despues de revocar (en cuyo caso el usuario
+  // ya esta autenticado y solo tendra llaves revocadas).
   fastify.post('/keys', async (request, reply) => {
-    const { userId, publicKeyPem, curva = 'P-256' } = request.body ?? {};
+    const { userId, publicKeyPem, curva = 'P-256', committed = true } = request.body ?? {};
 
     if (!userId || !publicKeyPem) {
       return reply.code(400).send({
@@ -17,11 +18,14 @@ export default async function pkiRoutes(fastify) {
       });
     }
 
+    // Buscamos solo entre llaves committeadas para evitar falsos positivos
+    // por drafts abandonados.
     const llaveActiva = await prisma.publicKey.findFirst({
-      where: { userId, revocada: false },
+      where: { userId, revocada: false, committed: true },
     });
 
     if (llaveActiva) {
+      // Hay una llave ACTIVA (no revocada) ya. Esto es un intento sospechoso.
       publishEvent('pki.new_key_attempt', {
         userId,
         previousKeyId: llaveActiva.id,
@@ -31,7 +35,7 @@ export default async function pkiRoutes(fastify) {
     }
 
     const nueva = await prisma.publicKey.create({
-      data: { userId, publicKeyPem, curva },
+      data: { userId, publicKeyPem, curva, committed },
       select: { id: true, userId: true, curva: true, createdAt: true },
     });
 
@@ -44,11 +48,11 @@ export default async function pkiRoutes(fastify) {
     return reply.code(201).send({ ok: true, key: nueva });
   });
 
-  // GET /api/pki/keys/:userId — consulta la llave pública activa
+  // GET /api/pki/keys/:userId — devuelve la llave activa.
   fastify.get('/keys/:userId', async (request, reply) => {
     const { userId } = request.params;
     const key = await prisma.publicKey.findFirst({
-      where: { userId, revocada: false },
+      where: { userId, revocada: false, committed: true },
       orderBy: { createdAt: 'desc' },
     });
     if (!key) return reply.code(404).send({ ok: false, error: 'Sin llave activa.' });
@@ -56,8 +60,6 @@ export default async function pkiRoutes(fastify) {
   });
 
   // POST /api/pki/verify
-  // Verifica una firma ECDSA P-256 contra un payload (nonce del challenge).
-  // El resultado se almacena en signatures como log auditable.
   fastify.post('/verify', async (request, reply) => {
     const { userId, payload, signatureB64, challengeId } = request.body ?? {};
 
@@ -69,7 +71,7 @@ export default async function pkiRoutes(fastify) {
     }
 
     const key = await prisma.publicKey.findFirst({
-      where: { userId, revocada: false },
+      where: { userId, revocada: false, committed: true },
       orderBy: { createdAt: 'desc' },
     });
     if (!key) return reply.code(404).send({ ok: false, error: 'Usuario sin llave activa.' });
@@ -108,8 +110,7 @@ export default async function pkiRoutes(fastify) {
     return { ok: true, valida };
   });
 
-  // POST /api/pki/keys/:id/revoke — marca una llave como revocada (PROTEGIDO)
-  // Solo el dueño de la llave (validado vía JWT) puede revocarla.
+  // POST /api/pki/keys/:id/revoke (PROTEGIDO)
   fastify.post('/keys/:id/revoke', { preHandler: requireAuth }, async (request, reply) => {
     const { id } = request.params;
     try {
@@ -129,12 +130,29 @@ export default async function pkiRoutes(fastify) {
       return reply.code(500).send({ ok: false, error: err.message });
     }
   });
+
+  // POST /api/pki/users/:userId/revoke-all
+  // Revoca TODAS las llaves activas del usuario. Lo usa el flujo de
+  // revocacion del auth-service tras validar el codigo por correo.
+  fastify.post('/users/:userId/revoke-all', async (request, reply) => {
+    const { userId } = request.params;
+    const result = await prisma.publicKey.updateMany({
+      where: { userId, revocada: false },
+      data: { revocada: true, revokedAt: new Date() },
+    });
+    publishEvent('pki.user_keys_revoked', { userId, cantidad: result.count });
+    return { ok: true, revocadas: result.count };
+  });
+
+  // DELETE /api/pki/users/:userId — cascada (usado por consumer auth.user_deleted)
+  fastify.delete('/users/:userId', async (request, reply) => {
+    const { userId } = request.params;
+    const result = await prisma.publicKey.deleteMany({ where: { userId } });
+    return { ok: true, borradas: result.count };
+  });
 }
 
-// --- helpers ---
-
 async function importPublicKeyPem(pem) {
-  // Acepta PEM SPKI estándar
   const b64 = pem
     .replace(/-----BEGIN PUBLIC KEY-----/, '')
     .replace(/-----END PUBLIC KEY-----/, '')

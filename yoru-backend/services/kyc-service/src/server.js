@@ -3,6 +3,7 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import kycRoutes from './routes/kyc.js';
 import { connectBroker } from './broker.js';
+import { registrarConsumers } from './consumers.js';
 import { prisma } from './prisma.js';
 import { bootstrapBucket } from './s3.js';
 
@@ -21,7 +22,8 @@ app.get('/health', async () => ({
 
 await app.register(kycRoutes, { prefix: '/api/kyc' });
 
-await connectBroker(process.env.RABBITMQ_URL);
+const ch = await connectBroker(process.env.RABBITMQ_URL);
+if (ch) await registrarConsumers();
 await bootstrapBucket();
 
 const port = Number(process.env.PORT ?? 3003);

@@ -25,3 +25,26 @@ export function publishEvent(routingKey, payload) {
   channel.publish('yoru.events', routingKey, body, { persistent: true });
   console.log(`[broker] publicado ${routingKey}`);
 }
+
+export async function subscribe(queueName, routingKeys, handler) {
+  if (!channel) {
+    console.warn('[broker] no hay canal, no se puede suscribir.');
+    return;
+  }
+  await channel.assertQueue(queueName, { durable: true });
+  for (const key of routingKeys) {
+    await channel.bindQueue(queueName, 'yoru.events', key);
+  }
+  channel.consume(queueName, async (msg) => {
+    if (!msg) return;
+    try {
+      const payload = JSON.parse(msg.content.toString());
+      await handler(msg.fields.routingKey, payload);
+      channel.ack(msg);
+    } catch (err) {
+      console.error('[broker] error procesando mensaje:', err);
+      channel.nack(msg, false, false);
+    }
+  });
+  console.log(`[broker] suscrito a ${routingKeys.join(', ')} en cola ${queueName}`);
+}

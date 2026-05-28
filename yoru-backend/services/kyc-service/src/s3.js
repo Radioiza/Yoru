@@ -5,6 +5,7 @@ import {
   PutBucketCorsCommand,
   PutObjectCommand,
   GetObjectCommand,
+  DeleteObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
@@ -17,13 +18,9 @@ export const s3 = new S3Client({
     accessKeyId: process.env.S3_ACCESS_KEY ?? 'yoru',
     secretAccessKey: process.env.S3_SECRET_KEY ?? 'yoru_dev_minio',
   },
-  forcePathStyle: true, // necesario para MinIO
+  forcePathStyle: true,
 });
 
-/**
- * Garantiza que el bucket exista y configura CORS para que el
- * navegador pueda hacer PUT directo con las presigned URLs.
- */
 export async function bootstrapBucket() {
   try {
     await s3.send(new HeadBucketCommand({ Bucket: BUCKET }));
@@ -53,11 +50,10 @@ export async function bootstrapBucket() {
     }));
     console.log('[s3] CORS configurado en el bucket');
   } catch (err) {
-    console.warn('[s3] no se pudo configurar CORS (ignorable si MinIO ya lo permite por env):', err.message);
+    console.warn('[s3] no se pudo configurar CORS:', err.message);
   }
 }
 
-/** Devuelve un URL firmado para PUT (subir) un objeto. Expira en 5 min. */
 export async function presignPut({ key, contentType }) {
   return getSignedUrl(
     s3,
@@ -66,11 +62,14 @@ export async function presignPut({ key, contentType }) {
   );
 }
 
-/** Devuelve un URL firmado para GET (descargar) un objeto. Expira en 10 min. */
 export async function presignGet({ key }) {
   return getSignedUrl(
     s3,
     new GetObjectCommand({ Bucket: BUCKET, Key: key }),
     { expiresIn: 600 }
   );
+}
+
+export async function deleteObject(key) {
+  return s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: key }));
 }

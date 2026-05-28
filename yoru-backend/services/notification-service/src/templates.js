@@ -9,6 +9,18 @@
  */
 export const TEMPLATES = {
 
+  'auth.email_verification': (p) => ({
+    canal: 'email',
+    severidad: 'info',
+    asunto: '🔐 Tu codigo de verificacion Yoru',
+    cuerpo:
+      `Hola, gracias por registrarte en Yoru.\n\n` +
+      `Tu codigo de verificacion es:\n\n` +
+      `        ${p.codigo}\n\n` +
+      `Valido 5 minutos. Ingresalo en la pantalla de la app.\n` +
+      `Si no fuiste tu, ignora este mensaje.`,
+  }),
+
   'auth.user_created': (p) => ({
     canal: 'email',
     severidad: 'info',
@@ -77,6 +89,28 @@ export const TEMPLATES = {
       `Se registró un intento de firma inválido en tu cuenta.\n` +
       `Motivo: ${p.motivo ?? 'desconocido'}\n\n` +
       `Si no fuiste tú, considera revocar tu llave.`,
+  }),
+
+  'auth.revocacion_codigo': (p) => ({
+    canal: 'email',
+    severidad: 'critical',
+    asunto: '🔐 Codigo para revocar tu llave Yoru',
+    cuerpo:
+      `Hola, recibimos una solicitud para revocar tu llave criptografica.\n\n` +
+      `Tu codigo de confirmacion es:\n\n` +
+      `        ${p.codigo}\n\n` +
+      `Valido por 10 minutos. Si no fuiste tu, ignora este mensaje\n` +
+      `y considera cambiar tus credenciales del dispositivo.`,
+  }),
+
+  'auth.revocacion_confirmada': (p) => ({
+    canal: 'email',
+    severidad: 'warn',
+    asunto: '🔒 Llave revocada con exito',
+    cuerpo:
+      `Tu llave fue revocada y todas tus lineas telefonicas fueron\n` +
+      `desvinculadas. Si quieres seguir usando Yoru, genera un nuevo\n` +
+      `par de llaves desde la aplicacion.`,
   }),
 
   'telecom.kill_switch_activado': (p) => ({

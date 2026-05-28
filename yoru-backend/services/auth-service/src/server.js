@@ -4,6 +4,7 @@ import cors from '@fastify/cors';
 import authRoutes from './routes/auth.js';
 import { connectBroker } from './broker.js';
 import { prisma } from './prisma.js';
+import { arrancarCleanup } from './cleanup.js';
 
 const app = Fastify({ logger: { level: 'info' } });
 
@@ -21,6 +22,7 @@ app.get('/health', async () => ({
 await app.register(authRoutes, { prefix: '/api/auth' });
 
 await connectBroker(process.env.RABBITMQ_URL);
+arrancarCleanup();
 
 const port = Number(process.env.PORT ?? 3001);
 const host = process.env.HOST ?? '0.0.0.0';

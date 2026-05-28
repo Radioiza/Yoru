@@ -7,14 +7,21 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// Documentos KYC del usuario. Estos quedan persistentemente vinculados a su
+// cuenta (INE + selfie originales) y NO se pueden eliminar (solo en cascada
+// al borrar el usuario).
 model KycRequest {
   id            String        @id @default(uuid())
   userId        String        @unique @map("user_id")
   estado        EstadoKyc     @default(pendiente)
   refIneS3      String?       @map("ref_ine_s3")
   refSelfieS3   String?       @map("ref_selfie_s3")
+  // Foto de perfil editable. Empieza igual a la selfie (default), pero el
+  // usuario puede cambiarla sin afectar la selfie original.
+  refFotoPerfilS3 String?     @map("ref_foto_perfil_s3")
   scoreMatch    Float?        @map("score_match")
   motivoRechazo String?       @map("motivo_rechazo")
+  committed     Boolean       @default(false)
   createdAt     DateTime      @default(now()) @map("created_at")
   updatedAt     DateTime      @updatedAt @map("updated_at")
 
