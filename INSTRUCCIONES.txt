@@ -282,3 +282,5 @@ PROBLEMAS:
 
 * Camara bloqueada
   -> Clic en el candado de la URL -> Camara -> Permitir
+
+----- SE CAMBIÓ EL CORREO QUE LE LLEGA A LOS USUARIOS---- 27_05_26
