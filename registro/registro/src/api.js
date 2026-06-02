@@ -57,7 +57,16 @@ export const api = {
 
   // ===== Lineas =====
   listarMisLineas: (token)               => getJSON(`${AUTH}/api/auth/lineas`, token),
-  agregarLinea:    ({ telefono }, token) => postJSON(`${AUTH}/api/auth/lineas/agregar`, { telefono }, token),
+  // Vincular otra linea: SMS -> confirmar -> reto -> agregar (con firma .pem).
+  verificarLineaIniciar:   ({ telefono }, token)         => postJSON(`${AUTH}/api/auth/lineas/verificar/iniciar`, { telefono }, token),
+  verificarLineaConfirmar: ({ telefono, codigo }, token) => postJSON(`${AUTH}/api/auth/lineas/verificar/confirmar`, { telefono, codigo }, token),
+  retoLinea:               ({ telefono }, token)         => postJSON(`${AUTH}/api/auth/lineas/challenge`, { telefono }, token),
+  agregarLinea: ({ telefono, challengeId, signatureB64 }, token) =>
+    postJSON(`${AUTH}/api/auth/lineas/agregar`, { telefono, challengeId, signatureB64 }, token),
+
+  // ===== Recuperacion de contrasena por codigo de correo (sin .pem) =====
+  recuperarPasswordIniciar:   ({ email })                       => postJSON(`${AUTH}/api/auth/recuperar/password/iniciar`, { email }),
+  recuperarPasswordConfirmar: ({ email, codigo, newPassword })  => postJSON(`${AUTH}/api/auth/recuperar/password/confirmar`, { email, codigo, newPassword }),
 
   // ===== Revocacion (con codigo por correo) =====
   revocarIniciar:    (token)             => postJSON(`${AUTH}/api/auth/revocar/iniciar`, {}, token),

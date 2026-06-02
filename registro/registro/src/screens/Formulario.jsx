@@ -21,7 +21,7 @@ export default function Formulario({ valoresIniciales, onContinuar, onVolver }) 
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) e.email = 'Correo invalido.';
     const errsPass = reglasContrasena(password);
     if (errsPass.length > 0)   e.password = `Falta: ${errsPass.join(', ')}.`;
-    if (password !== password2) e.password2 = 'Las contrasenas no coinciden.';
+    if (password !== password2) e.password2 = 'Las contraseñas no coinciden.';
     setErrores(e);
     if (Object.keys(e).length > 0) return;
     onContinuar({
@@ -32,6 +32,11 @@ export default function Formulario({ valoresIniciales, onContinuar, onVolver }) 
       password,
     });
   };
+
+  // Verificacion en vivo (por tecleo) de que ambas contrasenas coinciden.
+  const confirmTocado = password2.length > 0;
+  const passwordsCoinciden = confirmTocado && password === password2;
+  const passwordsNoCoinciden = confirmTocado && password !== password2;
 
   const inputCls = (err) =>
     `w-full bg-[#f5eefe] border-[1.5px] rounded-2xl px-6 py-4 font-semibold focus:outline-none focus:border-[#591f96] focus:ring-2 focus:ring-[#b174e7] transition-all ${
@@ -76,28 +81,39 @@ export default function Formulario({ valoresIniciales, onContinuar, onVolver }) 
             </div>
 
             <div className="flex flex-col text-left">
-              <label className="text-[#591f96] font-bold ml-2 text-sm">Contrasena</label>
+              <label className="text-[#591f96] font-bold ml-2 text-sm">Contraseña</label>
               <PasswordInput
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Crea una contrasena segura"
+                placeholder="Crea una contraseña segura"
                 hasError={!!errores.password}
-                ariaLabel="Contrasena"
+                ariaLabel="Contraseña"
+                onCopy={(e) => e.preventDefault()}
+                onCut={(e) => e.preventDefault()}
               />
               <ChecklistContrasena password={password} />
               {errores.password && <span className="text-red-500 text-xs mt-1 ml-2 font-bold">{errores.password}</span>}
             </div>
 
             <div className="flex flex-col text-left">
-              <label className="text-[#591f96] font-bold ml-2 text-sm">Confirmar contrasena</label>
+              <label className="text-[#591f96] font-bold ml-2 text-sm">Confirmar contraseña</label>
               <PasswordInput
                 value={password2}
                 onChange={(e) => setPassword2(e.target.value)}
-                placeholder="Repite tu contrasena"
-                hasError={!!errores.password2}
-                ariaLabel="Confirmar contrasena"
+                placeholder="Repite tu contraseña"
+                hasError={!!errores.password2 || passwordsNoCoinciden}
+                ariaLabel="Confirmar contraseña"
+                onPaste={(e) => e.preventDefault()}
               />
-              {errores.password2 && <span className="text-red-500 text-xs mt-1 ml-2 font-bold">{errores.password2}</span>}
+              {passwordsCoinciden && (
+                <span className="text-green-600 text-xs mt-1 ml-2 font-bold">✓ Las contraseñas coinciden</span>
+              )}
+              {passwordsNoCoinciden && (
+                <span className="text-red-500 text-xs mt-1 ml-2 font-bold">✗ Las contraseñas no coinciden todavía</span>
+              )}
+              {errores.password2 && !passwordsNoCoinciden && (
+                <span className="text-red-500 text-xs mt-1 ml-2 font-bold">{errores.password2}</span>
+              )}
             </div>
 
             <div className="flex flex-col text-left">

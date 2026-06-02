@@ -56,7 +56,7 @@ export function validarRegistro({ telefono, curp, email, password, nombre }) {
 
   const errsPass = reglasContrasena(password);
   if (errsPass.length > 0) {
-    errores.password = `La contrasena debe tener ${errsPass.join(', ')}.`;
+    errores.password = `La contraseña debe tener ${errsPass.join(', ')}.`;
   }
 
   if (nombre !== undefined && nombre !== null && nombre !== '') {

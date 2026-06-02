@@ -4,6 +4,13 @@ import { presignPut, presignGet, deleteObject } from '../s3.js';
 
 export default async function kycRoutes(fastify) {
 
+  // GET /api/kyc/user-ids — lista los userId distintos con solicitudes KYC.
+  // Lo usa el reconciliador de auth para purgar huerfanos.
+  fastify.get('/user-ids', async () => {
+    const rows = await prisma.kycRequest.findMany({ distinct: ['userId'], select: { userId: true } });
+    return { ok: true, userIds: rows.map((r) => r.userId) };
+  });
+
   // POST /api/kyc/presigned-urls
   fastify.post('/presigned-urls', async (request, reply) => {
     const { userId } = request.body ?? {};

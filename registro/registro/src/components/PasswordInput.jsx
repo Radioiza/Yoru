@@ -6,7 +6,8 @@ import React, { useState } from 'react';
  */
 export default function PasswordInput({
   value, onChange, placeholder, hasError,
-  onKeyDown, autoComplete = 'new-password', ariaLabel,
+  onKeyDown, onCopy, onPaste, onCut,
+  autoComplete = 'new-password', ariaLabel,
 }) {
   const [verVisible, setVerVisible] = useState(false);
 
@@ -18,6 +19,9 @@ export default function PasswordInput({
         onChange={onChange}
         placeholder={placeholder}
         onKeyDown={onKeyDown}
+        onCopy={onCopy}
+        onPaste={onPaste}
+        onCut={onCut}
         autoComplete={autoComplete}
         aria-label={ariaLabel}
         className={`w-full bg-[#f5eefe] border-[1.5px] rounded-2xl pl-6 pr-14 py-4 font-semibold focus:outline-none focus:border-[#591f96] focus:ring-2 focus:ring-[#b174e7] transition-all ${
@@ -27,8 +31,8 @@ export default function PasswordInput({
       <button
         type="button"
         onClick={() => setVerVisible((v) => !v)}
-        title={verVisible ? 'Ocultar contrasena' : 'Mostrar contrasena'}
-        aria-label={verVisible ? 'Ocultar contrasena' : 'Mostrar contrasena'}
+        title={verVisible ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+        aria-label={verVisible ? 'Ocultar contraseña' : 'Mostrar contraseña'}
         className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-[#dfd0f1] hover:bg-[#b174e7] hover:text-white text-[#591f96] flex items-center justify-center transition-all"
       >
         {verVisible ? (

@@ -74,13 +74,19 @@ export default function Generacion({ datosRegistro, onListoParaVerificar, onVolv
         fechaGeneracion: new Date().toISOString(),
       };
       const pemFile = construirArchivoPem({ metadata, publicKeyPem, privateKeyPem });
+      const filename = nombreArchivoLlave({ curp, telefono });
+
+      // Descarga AUTOMATICA a la carpeta de Descargas del dispositivo, ademas
+      // del boton manual de respaldo que se muestra abajo.
+      descargarArchivo(filename, pemFile);
 
       setResultado({
         draftUserId,
         email,
         verificacionExpiraEn,
+        descargaAutomatica: true,
         archivoLlave: {
-          filename: nombreArchivoLlave({ curp, telefono }),
+          filename,
           contenido: pemFile,
         },
       });
@@ -129,17 +135,27 @@ export default function Generacion({ datosRegistro, onListoParaVerificar, onVolv
               ¡Llaves generadas! Te enviamos un codigo a {resultado.email}.
             </div>
 
+            {resultado.descargaAutomatica && (
+              <div className="bg-blue-50 border-[1.5px] border-blue-300 rounded-2xl p-4 w-full">
+                <p className="text-blue-800 text-sm leading-snug">
+                  ⬇️ Tu archivo <b>{resultado.archivoLlave.filename}</b> se descargó
+                  automáticamente en la carpeta de Descargas de tu dispositivo. Si no
+                  lo ves, usa el botón de abajo para descargarlo de nuevo.
+                </p>
+              </div>
+            )}
+
             <div className="bg-yellow-50 border-[1.5px] border-yellow-400 rounded-2xl p-4 w-full">
               <p className="text-yellow-800 font-bold text-sm mb-1">⚠️ Muy importante</p>
               <p className="text-yellow-800 text-sm leading-snug">
-                Descarga tu archivo .pem ahora. Lo necesitas si olvidas tu
-                contrasena o tu correo. Sin el, no podras recuperar la cuenta.
+                Guarda tu archivo .pem en un lugar seguro. Lo necesitas si olvidas tu
+                correo. Sin él, no podrás recuperar la cuenta.
               </p>
             </div>
 
             <button onClick={() => descargarArchivo(resultado.archivoLlave.filename, resultado.archivoLlave.contenido)}
               className="bg-[#591f96] text-white py-4 px-8 rounded-full font-bold text-lg hover:bg-[#3a1366] transition-all shadow-lg w-full max-w-sm">
-              ⬇️ Descargar mi llave (.pem)
+              ⬇️ Descargar mi llave (.pem) de nuevo
             </button>
 
             <button

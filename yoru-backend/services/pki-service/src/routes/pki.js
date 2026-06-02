@@ -48,6 +48,14 @@ export default async function pkiRoutes(fastify) {
     return reply.code(201).send({ ok: true, key: nueva });
   });
 
+  // GET /api/pki/user-ids — lista los userId distintos con llaves registradas.
+  // Lo usa el reconciliador de auth para detectar y purgar huerfanos (p.ej.
+  // si un usuario fue borrado directamente en la BD / Prisma Studio).
+  fastify.get('/user-ids', async () => {
+    const rows = await prisma.publicKey.findMany({ distinct: ['userId'], select: { userId: true } });
+    return { ok: true, userIds: rows.map((r) => r.userId) };
+  });
+
   // GET /api/pki/keys/:userId — devuelve la llave activa.
   fastify.get('/keys/:userId', async (request, reply) => {
     const { userId } = request.params;

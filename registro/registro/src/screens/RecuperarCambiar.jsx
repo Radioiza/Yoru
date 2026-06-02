@@ -18,11 +18,11 @@ export default function RecuperarCambiar({ user, recoveryToken, onTerminado }) {
     if (newPassword || newPassword2) {
       const errs = reglasContrasena(newPassword);
       if (errs.length > 0) {
-        setError(`La contrasena debe tener: ${errs.join(', ')}.`);
+        setError(`La contraseña debe tener: ${errs.join(', ')}.`);
         return;
       }
       if (newPassword !== newPassword2) {
-        setError('Las contrasenas no coinciden.');
+        setError('Las contraseñas no coinciden.');
         return;
       }
       cambios.newPassword = newPassword;
@@ -64,28 +64,29 @@ export default function RecuperarCambiar({ user, recoveryToken, onTerminado }) {
         )}
 
         <p className="text-[#591f96] text-sm mb-4">
-          Puedes cambiar tu contrasena, tu correo, o ambos. Si solo querias
+          Puedes cambiar tu contraseña, tu correo, o ambos. Si solo querías
           recordar tu correo, salta directo a "Terminar".
         </p>
 
         <div className="flex flex-col gap-4 max-w-md mx-auto">
           <div className="flex flex-col text-left">
-            <label className="text-[#591f96] font-bold ml-2 text-sm">Nueva contrasena (opcional)</label>
+            <label className="text-[#591f96] font-bold ml-2 text-sm">Nueva contraseña (opcional)</label>
             <PasswordInput
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
-              placeholder="Dejar vacio para no cambiar"
-              ariaLabel="Nueva contrasena"
+              placeholder="Dejar vacío para no cambiar"
+              ariaLabel="Nueva contraseña"
             />
             {newPassword && <ChecklistContrasena password={newPassword} />}
           </div>
           <div className="flex flex-col text-left">
-            <label className="text-[#591f96] font-bold ml-2 text-sm">Confirmar nueva contrasena</label>
+            <label className="text-[#591f96] font-bold ml-2 text-sm">Confirmar nueva contraseña</label>
             <PasswordInput
               value={newPassword2}
               onChange={(e) => setNewPassword2(e.target.value)}
               placeholder=""
-              ariaLabel="Confirmar nueva contrasena"
+              ariaLabel="Confirmar nueva contraseña"
+              onPaste={(e) => e.preventDefault()}
             />
           </div>
           <div className="flex flex-col text-left">

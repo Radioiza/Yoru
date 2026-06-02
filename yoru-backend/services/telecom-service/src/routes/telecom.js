@@ -38,6 +38,13 @@ export default async function telecomRoutes(fastify) {
     }
   });
 
+  // GET /api/telecom/user-ids — lista los userId distintos con lineas.
+  // Lo usa el reconciliador de auth para purgar huerfanos.
+  fastify.get('/user-ids', async () => {
+    const rows = await prisma.linea.findMany({ distinct: ['userId'], select: { userId: true } });
+    return { ok: true, userIds: rows.map((r) => r.userId) };
+  });
+
   // GET /api/telecom/lineas/:telefono
   fastify.get('/lineas/:telefono', async (request, reply) => {
     const { telefono } = request.params;

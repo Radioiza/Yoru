@@ -13,7 +13,7 @@ export default function Login({ onLoginExitoso, onIrARegistro, onIrARecuperar, o
 
   const entrar = async () => {
     if (!email || !password) {
-      setError('Correo y contrasena son obligatorios.');
+      setError('Correo y contraseña son obligatorios.');
       return;
     }
     setCargando(true);
@@ -44,7 +44,7 @@ export default function Login({ onLoginExitoso, onIrARegistro, onIrARecuperar, o
           </div>
           <h2 className="text-3xl font-extrabold text-[#591f96] mb-2">Iniciar sesion</h2>
           <p className="text-[#591f96] font-medium max-w-md mx-auto">
-            Usa tu correo y contrasena.
+            Usa tu correo y contraseña.
           </p>
         </div>
 
@@ -65,13 +65,13 @@ export default function Login({ onLoginExitoso, onIrARegistro, onIrARecuperar, o
           </div>
 
           <div className="flex flex-col text-left">
-            <label className="text-[#591f96] font-bold ml-2 text-sm">Contrasena</label>
+            <label className="text-[#591f96] font-bold ml-2 text-sm">Contraseña</label>
             <PasswordInput
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') entrar(); }}
               autoComplete="current-password"
-              ariaLabel="Contrasena"
+              ariaLabel="Contraseña"
             />
           </div>
 
@@ -84,7 +84,7 @@ export default function Login({ onLoginExitoso, onIrARegistro, onIrARecuperar, o
 
           <div className="flex flex-col items-center gap-2 mt-2">
             <button onClick={onIrARecuperar} className="text-[#bf00ff] text-sm font-bold hover:underline">
-              ¿Olvidaste tu contrasena o correo?
+              ¿Olvidaste tu contraseña o correo?
             </button>
             <p className="text-[#591f96] text-sm">
               ¿No tienes cuenta? {' '}

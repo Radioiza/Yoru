@@ -1,6 +1,7 @@
 import nodemailer from 'nodemailer';
 import fs from 'node:fs';
 import path from 'node:path';
+import { smsHabilitado, enviarSms } from './sms.js';
 
 const MAIL_FROM = process.env.MAIL_FROM ?? 'noreply@yoru.mx';
 
@@ -71,9 +72,11 @@ export async function enviar(notificacion) {
 
   const destinatario = payload.email
     ? payload.email
-    : payload.userId
-      ? `usuario:${payload.userId.slice(0, 8)}…`
-      : 'sistema';
+    : payload.telefono
+      ? `tel:${payload.telefono}`
+      : payload.userId
+        ? `usuario:${payload.userId.slice(0, 8)}…`
+        : 'sistema';
 
   const tag = etiquetaSeveridad(severidad);
   const fecha = new Date().toISOString();
@@ -87,9 +90,22 @@ export async function enviar(notificacion) {
   cuerpo.split('\n').forEach((linea) => console.log(`  ${linea}`));
   console.log('────────────────────────────────────────────────────');
 
-  // Solo intentamos SMTP real si:
-  //   - estamos en modo SMTP
-  //   - el destinatario es una direccion de correo valida
+  // --- Canal SMS: si es una notificacion 'sms' con telefono, intentamos Twilio ---
+  if (canal === 'sms' && payload.telefono) {
+    if (smsHabilitado()) {
+      const res = await enviarSms({ to: payload.telefono, body: cuerpo });
+      if (res.enviado) {
+        console.log(`[notifier] ✓ SMS enviado a ${res.to} (id ${res.id ?? '—'})`);
+      } else {
+        console.error(`[notifier] ✗ fallo enviando SMS a ${res.to ?? payload.telefono}:`, res.error);
+      }
+    } else {
+      console.log(`[notifier] (SMS en modo consola: codigo visible arriba para ${payload.telefono})`);
+    }
+  }
+
+  // --- Canal correo: solo intentamos SMTP real si estamos en modo SMTP y el
+  //     destinatario es una direccion de correo valida. ---
   const debeEnviar = modoSMTP && EMAIL_REGEX.test(destinatario);
   if (debeEnviar) {
     try {
@@ -104,7 +120,7 @@ export async function enviar(notificacion) {
       console.error(`[notifier] ✗ fallo enviando a ${destinatario}:`, err.message);
       if (err.response) console.error('[notifier] respuesta servidor:', err.response);
     }
-  } else if (modoSMTP) {
+  } else if (modoSMTP && canal !== 'sms') {
     console.log(`[notifier] (skip SMTP: destinatario "${destinatario}" no es un email)`);
   }
 

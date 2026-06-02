@@ -13,6 +13,8 @@ import RevocarCodigo    from './screens/RevocarCodigo.jsx';
 import RegenerarLlave   from './screens/RegenerarLlave.jsx';
 import RecuperarLlave   from './screens/RecuperarLlave.jsx';
 import RecuperarCambiar from './screens/RecuperarCambiar.jsx';
+import RecuperarMenu     from './screens/RecuperarMenu.jsx';
+import RecuperarPassword from './screens/RecuperarPassword.jsx';
 
 /**
  * Orquestador principal. Estado global + ruteo entre pantallas. Cada
@@ -99,7 +101,7 @@ export default function App({ pantallaInicial = 'formulario', onSalir }) {
   };
 
   // ----- Recuperacion -----
-  const onIrARecuperar = () => setPantalla('recuperar_llave');
+  const onIrARecuperar = () => setPantalla('recuperar_menu');
   const onRecuperarVerificado = (ctx) => {
     setRecoveryCtx(ctx);
     setPantalla('recuperar_cambiar');
@@ -176,6 +178,7 @@ export default function App({ pantallaInicial = 'formulario', onSalir }) {
       {pantalla === 'agregar_linea' && (
         <AgregarLinea
           token={token}
+          user={userFull}
           onLineaAgregada={() => setPantalla('cuenta')}
           onCancelar={() => setPantalla('cuenta')}
         />
@@ -206,10 +209,25 @@ export default function App({ pantallaInicial = 'formulario', onSalir }) {
         />
       )}
 
+      {pantalla === 'recuperar_menu' && (
+        <RecuperarMenu
+          onElegirPassword={() => setPantalla('recuperar_password')}
+          onElegirCorreo={() => setPantalla('recuperar_llave')}
+          onVolverInicio={() => setPantalla('login')}
+        />
+      )}
+
+      {pantalla === 'recuperar_password' && (
+        <RecuperarPassword
+          onTerminado={onRecuperarTerminado}
+          onVolver={() => setPantalla('recuperar_menu')}
+        />
+      )}
+
       {pantalla === 'recuperar_llave' && (
         <RecuperarLlave
           onVerificado={onRecuperarVerificado}
-          onVolverInicio={() => setPantalla('login')}
+          onVolverInicio={() => setPantalla('recuperar_menu')}
         />
       )}
 

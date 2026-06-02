@@ -21,6 +21,28 @@ export const TEMPLATES = {
       `Si no fuiste tu, ignora este mensaje.`,
   }),
 
+  'auth.sms_verificacion': (p) => ({
+    canal: 'sms',
+    severidad: 'info',
+    asunto: '📲 Código para vincular tu línea Yoru',
+    cuerpo:
+      `Yoru: estas vinculando la linea ${p.telefono} a tu cuenta.\n\n` +
+      `Tu codigo de confirmacion es: ${p.codigo}\n\n` +
+      `Valido 5 minutos. Si no fuiste tu, ignora este mensaje.`,
+  }),
+
+  'auth.password_reset_codigo': (p) => ({
+    canal: 'email',
+    severidad: 'critical',
+    asunto: '🔑 Código para restablecer tu contraseña Yoru',
+    cuerpo:
+      `Hola, recibimos una solicitud para restablecer tu contraseña.\n\n` +
+      `Tu codigo es:\n\n` +
+      `        ${p.codigo}\n\n` +
+      `Valido 10 minutos. Ingresalo en la pantalla de recuperacion.\n` +
+      `Si no fuiste tu, ignora este mensaje: tu contraseña no cambiara.`,
+  }),
+
   'auth.user_created': (p) => ({
     canal: 'email',
     severidad: 'info',

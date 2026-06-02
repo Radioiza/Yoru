@@ -17,6 +17,8 @@ const TELECOM_URL = process.env.TELECOM_URL ?? 'http://localhost:3004';
 const VERIF_TTL_MIN     = 5;   // ventana para ingresar el codigo de email
 const RESEND_COOLDOWN_S = 60;  // un reenvio por minuto
 const RECOVERY_TTL_MIN  = 10;  // ventana para usar el recoveryToken
+const SMS_TTL_MIN       = 5;   // ventana para ingresar el codigo SMS de la linea
+const RESET_PASS_TTL_MIN = 10; // ventana para el codigo de reseteo de contrasena
 
 export default async function authRoutes(fastify) {
 
@@ -379,7 +381,7 @@ export default async function authRoutes(fastify) {
     // En login solo verificamos que vengan datos: si la contrasena no cumple
     // reglas modernas, fallara igualmente al verificar el hash.
     if (!validarEmail(email) || typeof password !== 'string' || password.length === 0) {
-      return reply.code(400).send({ ok: false, error: 'Correo o contrasena invalidos.' });
+      return reply.code(400).send({ ok: false, error: 'Correo o contraseña inválidos.' });
     }
     const emailLimpio = email.trim().toLowerCase();
     const user = await prisma.user.findUnique({ where: { email: emailLimpio } });
@@ -467,16 +469,152 @@ export default async function authRoutes(fastify) {
   });
 
   // ============================================================
-  // POST /api/auth/lineas/agregar (PROTEGIDO)
+  // VINCULAR OTRA LINEA — FILTRO DE SEGURIDAD EN 3 PASOS
+  //
+  //   1. POST /lineas/verificar/iniciar  { telefono }
+  //        -> envia un codigo SMS de 5 digitos al telefono indicado.
+  //   2. POST /lineas/verificar/confirmar { telefono, codigo }
+  //        -> valida el codigo SMS; marca el telefono como "confirmado".
+  //   3. POST /lineas/challenge { telefono }
+  //        -> entrega un nonce para firmar con la llave privada (.pem).
+  //   4. POST /lineas/agregar { telefono, challengeId, signatureB64 }
+  //        -> verifica la firma contra PKI (prueba de posesion de la llave)
+  //           y, solo entonces, vincula la linea.
   // ============================================================
-  fastify.post('/lineas/agregar', { preHandler: requireAuth }, async (request, reply) => {
+
+  // PASO 1 — enviar codigo SMS al telefono.
+  fastify.post('/lineas/verificar/iniciar', { preHandler: requireAuth }, async (request, reply) => {
     const { telefono } = request.body ?? {};
     if (!telefono || !/^\d{10}$/.test(telefono)) {
-      return reply.code(400).send({ ok: false, error: 'Telefono invalido (10 digitos).' });
+      return reply.code(400).send({ ok: false, error: 'Teléfono inválido (10 dígitos).' });
+    }
+    const userId = request.user.sub;
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) return reply.code(404).send({ ok: false, error: 'Usuario no encontrado.' });
+
+    // Si el telefono ya esta vinculado a una cuenta en telecom, no seguimos.
+    try {
+      const ex = await fetch(`${TELECOM_URL}/api/telecom/lineas/${telefono}`);
+      if (ex.ok) {
+        return reply.code(409).send({ ok: false, error: 'Este teléfono ya está vinculado a una cuenta.' });
+      }
+    } catch { /* si telecom no responde, dejamos que falle mas adelante */ }
+
+    const codigo = codigoCincoDigitos();
+    const expira = new Date(Date.now() + SMS_TTL_MIN * 60 * 1000);
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        lineaVerifTelefono: telefono,
+        lineaVerifCodigo: codigo,
+        lineaVerifExpira: expira,
+        lineaVerifConfirmada: false,
+      },
+    });
+
+    publishEvent('auth.sms_verificacion', {
+      userId,
+      telefono,
+      codigo,
+      expiraEn: expira.toISOString(),
+    });
+
+    return { ok: true, expiraEn: expira.toISOString() };
+  });
+
+  // PASO 2 — confirmar el codigo SMS.
+  fastify.post('/lineas/verificar/confirmar', { preHandler: requireAuth }, async (request, reply) => {
+    const { telefono, codigo } = request.body ?? {};
+    if (!telefono || !codigo) {
+      return reply.code(400).send({ ok: false, error: 'Teléfono y código requeridos.' });
+    }
+    const userId = request.user.sub;
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) return reply.code(404).send({ ok: false, error: 'Usuario no encontrado.' });
+
+    if (user.lineaVerifTelefono !== telefono || !user.lineaVerifCodigo || !user.lineaVerifExpira) {
+      return reply.code(400).send({ ok: false, error: 'No hay un código activo para ese teléfono.' });
+    }
+    if (user.lineaVerifExpira < new Date()) {
+      return reply.code(400).send({ ok: false, error: 'Código expirado. Solicita uno nuevo.' });
+    }
+    if (user.lineaVerifCodigo !== String(codigo).trim()) {
+      return reply.code(400).send({ ok: false, error: 'Código incorrecto.' });
+    }
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: { lineaVerifConfirmada: true },
+    });
+    return { ok: true };
+  });
+
+  // PASO 3 — entregar un reto para firmar con la llave privada (.pem).
+  fastify.post('/lineas/challenge', { preHandler: requireAuth }, async (request, reply) => {
+    const { telefono } = request.body ?? {};
+    const userId = request.user.sub;
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) return reply.code(404).send({ ok: false, error: 'Usuario no encontrado.' });
+    if (!user.lineaVerifConfirmada || user.lineaVerifTelefono !== telefono) {
+      return reply.code(403).send({ ok: false, error: 'Debes confirmar el código SMS primero.' });
+    }
+
+    const nonce = crypto.randomUUID() + '.' + Date.now();
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+    const challenge = await prisma.challenge.create({
+      data: { userId, nonce, proposito: 'add_line', expiresAt },
+      select: { id: true, nonce: true, expiresAt: true },
+    });
+    return { ok: true, challenge };
+  });
+
+  // PASO 4 — verificar la firma (.pem) y, si es valida, vincular la linea.
+  fastify.post('/lineas/agregar', { preHandler: requireAuth }, async (request, reply) => {
+    const { telefono, challengeId, signatureB64 } = request.body ?? {};
+    if (!telefono || !/^\d{10}$/.test(telefono)) {
+      return reply.code(400).send({ ok: false, error: 'Teléfono inválido (10 dígitos).' });
+    }
+    if (!challengeId || !signatureB64) {
+      return reply.code(400).send({ ok: false, error: 'Falta la prueba con tu llave (.pem).' });
     }
     const userId = request.user.sub;
     const publicKeyId = request.user.publicKeyId ?? null;
 
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) return reply.code(404).send({ ok: false, error: 'Usuario no encontrado.' });
+    if (!user.lineaVerifConfirmada || user.lineaVerifTelefono !== telefono) {
+      return reply.code(403).send({ ok: false, error: 'Debes confirmar el código SMS primero.' });
+    }
+
+    // Validar el reto.
+    const challenge = await prisma.challenge.findUnique({ where: { id: challengeId } });
+    if (!challenge || challenge.userId !== userId || challenge.proposito !== 'add_line') {
+      return reply.code(404).send({ ok: false, error: 'Reto no encontrado.' });
+    }
+    if (challenge.usado)                  return reply.code(401).send({ ok: false, error: 'Reto ya usado.' });
+    if (challenge.expiresAt < new Date()) return reply.code(401).send({ ok: false, error: 'Reto expirado.' });
+
+    // Verificar la firma contra PKI (prueba de posesion de la llave privada).
+    let valida = false;
+    try {
+      const r = await fetch(`${PKI_URL}/api/pki/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, payload: challenge.nonce, signatureB64, challengeId }),
+      });
+      const d = await r.json();
+      valida = d.valida === true;
+    } catch {
+      return reply.code(503).send({ ok: false, error: 'PKI no disponible.' });
+    }
+    if (!valida) {
+      publishEvent('auth.failed_attempt', { userId, motivo: 'firma invalida al agregar linea' });
+      return reply.code(401).send({ ok: false, error: 'La llave (.pem) no corresponde a esta cuenta.' });
+    }
+
+    await prisma.challenge.update({ where: { id: challengeId }, data: { usado: true } });
+
+    // Vincular la linea en telecom.
     try {
       const r = await fetch(`${TELECOM_URL}/api/telecom/lineas`, {
         method: 'POST',
@@ -487,6 +625,17 @@ export default async function authRoutes(fastify) {
       if (r.status === 409) return reply.code(409).send(d);
       if (!r.ok) throw new Error(d.error ?? 'Telecom fallo.');
       await fetch(`${TELECOM_URL}/api/telecom/lineas/${telefono}/activar`, { method: 'POST' });
+
+      // Limpiar el estado de verificacion de linea.
+      await prisma.user.update({
+        where: { id: userId },
+        data: {
+          lineaVerifTelefono: null,
+          lineaVerifCodigo: null,
+          lineaVerifExpira: null,
+          lineaVerifConfirmada: false,
+        },
+      });
       return reply.code(201).send({ ok: true, linea: d.linea });
     } catch (err) {
       return reply.code(502).send({ ok: false, error: err.message });
@@ -655,7 +804,7 @@ export default async function authRoutes(fastify) {
       if (errsPass.length > 0) {
         return reply.code(400).send({
           ok: false,
-          error: `La contrasena debe tener ${errsPass.join(', ')}.`,
+          error: `La contraseña debe tener ${errsPass.join(', ')}.`,
         });
       }
       const { hash, salt } = hashPassword(newPassword);
@@ -687,5 +836,79 @@ export default async function authRoutes(fastify) {
       select: { id: true, email: true },
     });
     return { ok: true, user: updated };
+  });
+
+  // ============================================================
+  // OLVIDO DE CONTRASENA — RESETEO CON CODIGO POR CORREO (sin .pem)
+  //
+  //   1. POST /recuperar/password/iniciar  { email }
+  //        -> si el correo existe, envia un codigo de 5 digitos.
+  //   2. POST /recuperar/password/confirmar { email, codigo, newPassword }
+  //        -> valida el codigo y establece la nueva contrasena.
+  // ============================================================
+  fastify.post('/recuperar/password/iniciar', async (request, reply) => {
+    const { email } = request.body ?? {};
+    if (!validarEmail(email)) {
+      return reply.code(400).send({ ok: false, error: 'Correo inválido.' });
+    }
+    const emailLimpio = email.trim().toLowerCase();
+    const user = await prisma.user.findUnique({ where: { email: emailLimpio } });
+
+    // Solo enviamos el codigo si la cuenta existe y esta activa, pero
+    // respondemos ok de forma generica para no revelar si el correo existe.
+    if (user && user.committed && user.emailVerified) {
+      const codigo = codigoCincoDigitos();
+      const expira = new Date(Date.now() + RESET_PASS_TTL_MIN * 60 * 1000);
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { passwordResetCodigo: codigo, passwordResetExpira: expira },
+      });
+      publishEvent('auth.password_reset_codigo', {
+        userId: user.id,
+        email: emailLimpio,
+        codigo,
+        expiraEn: expira.toISOString(),
+      });
+    }
+
+    return { ok: true };
+  });
+
+  fastify.post('/recuperar/password/confirmar', async (request, reply) => {
+    const { email, codigo, newPassword } = request.body ?? {};
+    if (!validarEmail(email) || !codigo || !newPassword) {
+      return reply.code(400).send({ ok: false, error: 'Datos incompletos.' });
+    }
+    const emailLimpio = email.trim().toLowerCase();
+    const user = await prisma.user.findUnique({ where: { email: emailLimpio } });
+    if (!user || !user.passwordResetCodigo || !user.passwordResetExpira) {
+      return reply.code(400).send({ ok: false, error: 'No hay un código activo. Solicita uno nuevo.' });
+    }
+    if (user.passwordResetExpira < new Date()) {
+      return reply.code(400).send({ ok: false, error: 'Código expirado. Solicita uno nuevo.' });
+    }
+    if (user.passwordResetCodigo !== String(codigo).trim()) {
+      return reply.code(400).send({ ok: false, error: 'Código incorrecto.' });
+    }
+
+    const errsPass = reglasContrasena(newPassword);
+    if (errsPass.length > 0) {
+      return reply.code(400).send({
+        ok: false,
+        error: `La contraseña debe tener ${errsPass.join(', ')}.`,
+      });
+    }
+
+    const { hash, salt } = hashPassword(newPassword);
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash: hash,
+        passwordSalt: salt,
+        passwordResetCodigo: null,
+        passwordResetExpira: null,
+      },
+    });
+    return { ok: true };
   });
 }

@@ -88,8 +88,8 @@ export default function RecuperarLlave({ onVerificado, onVolverInicio }) {
           </div>
           <h2 className="text-3xl font-extrabold text-[#591f96] mb-2">Recuperar mi cuenta</h2>
           <p className="text-[#591f96] font-medium max-w-md mx-auto">
-            Carga tu archivo .pem para demostrar que la cuenta es tuya. Despues
-            podras ver tu correo actual y/o cambiar tu contrasena.
+            Carga tu archivo .pem para demostrar que la cuenta es tuya. Después
+            podrás ver tu correo actual y cambiarlo.
           </p>
         </div>
 

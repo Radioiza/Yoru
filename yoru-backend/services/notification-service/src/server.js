@@ -4,6 +4,7 @@ import cors from '@fastify/cors';
 import { connectBroker } from './broker.js';
 import { registrarConsumers } from './consumers.js';
 import { obtenerHistorial } from './notifier.js';
+import { initSms } from './sms.js';
 
 const app = Fastify({ logger: { level: 'warn' } }); // menos ruido, el notifier ya imprime
 
@@ -28,6 +29,8 @@ app.get('/notifications', async (request) => {
   if (limit)     lista = lista.slice(0, Number(limit));
   return { ok: true, total: lista.length, notificaciones: lista };
 });
+
+await initSms();
 
 const ch = await connectBroker(process.env.RABBITMQ_URL);
 if (ch) await registrarConsumers();
