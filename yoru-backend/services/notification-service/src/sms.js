@@ -81,9 +81,9 @@ async function initTraccar() {
   traccarUrl = process.env.TRACCAR_SMS_URL ?? null;
   traccarKey = process.env.TRACCAR_SMS_KEY ?? null;
 
-  console.log(`  TRACCAR_SMS_URL  = "${traccarUrl ?? '(no definido)'}"`);
-  console.log(`  TRACCAR_SMS_KEY  = ${traccarKey ? '(definido)' : '(no definido)'}`);
-  console.log(`  SMS_COUNTRY_CODE = "${SMS_COUNTRY_CODE}"`);
+  console.log(`  TRACCAR_SMS_URL   = "${traccarUrl ?? '(no definido)'}"`);
+  console.log(`  TRACCAR_SMS_KEY   = ${traccarKey ? '(definido)' : '(no definido)'}`);
+  console.log(`  SMS_NUMBER_FORMAT = "${SMS_NUMBER_FORMAT}" (national = 10 digitos)`);
 
   if (!traccarUrl || !traccarKey) {
     console.log('  [X] Faltan datos del gateway Traccar. Se queda en modo CONSOLA.');
@@ -103,7 +103,7 @@ async function initAndroid() {
   console.log(`  ANDROID_SMS_URL      = "${androidUrl ?? '(no definido)'}"`);
   console.log(`  ANDROID_SMS_USER     = "${user ?? '(no definido)'}"`);
   console.log(`  ANDROID_SMS_PASSWORD = ${pass ? '(definido)' : '(no definido)'}`);
-  console.log(`  SMS_COUNTRY_CODE     = "${SMS_COUNTRY_CODE}"`);
+  console.log(`  SMS_NUMBER_FORMAT    = "${SMS_NUMBER_FORMAT}" (national = 10 digitos)`);
 
   if (!androidUrl || !user || !pass) {
     console.log('  [X] Faltan datos del gateway Android. Se queda en modo CONSOLA.');
@@ -159,13 +159,36 @@ export function aE164(telefono) {
   return `${SMS_COUNTRY_CODE}${digits}`;
 }
 
+/**
+ * Numero en formato NACIONAL (solo digitos, sin prefijo de pais). Muchos
+ * operadores moviles (ej. en Mexico) NO entregan SMS locales si el numero va
+ * en formato internacional "+52...", pero si los entregan a 10 digitos. Por eso
+ * los gateways que usan la SIM local (Android/Traccar) envian en nacional.
+ * Si el numero trae el prefijo de pais, se lo quitamos.
+ */
+export function aNacional(telefono) {
+  let d = String(telefono ?? '').replace(/\D/g, '');
+  const cc = SMS_COUNTRY_CODE.replace(/\D/g, ''); // p.ej. "52"
+  if (cc && d.length > 10 && d.startsWith(cc)) d = d.slice(cc.length);
+  return d;
+}
+
+// Formato de numero para los gateways que usan la SIM local (android/traccar):
+//   'national' (default) -> 10 digitos        | 'e164' -> +52...
+const SMS_NUMBER_FORMAT = (process.env.SMS_NUMBER_FORMAT ?? 'national').toLowerCase();
+
+function paraGatewayLocal(telefono) {
+  return SMS_NUMBER_FORMAT === 'e164' ? aE164(telefono) : aNacional(telefono);
+}
+
 /** Envia un SMS real con el proveedor activo. Devuelve { enviado, id?, to?, error? }. */
 export async function enviarSms({ to, body }) {
-  const dest = aE164(to);
-  if (proveedor === 'traccar') return enviarTraccar(dest, body);
-  if (proveedor === 'android') return enviarAndroid(dest, body);
-  if (proveedor === 'twilio')  return enviarTwilio(dest, body);
-  return { enviado: false, to: dest, error: 'sms deshabilitado' };
+  // Twilio exige E.164; los gateways de SIM local usan el formato configurado
+  // (nacional por defecto, porque el operador suele rechazar el +52 local).
+  if (proveedor === 'traccar') return enviarTraccar(paraGatewayLocal(to), body);
+  if (proveedor === 'android') return enviarAndroid(paraGatewayLocal(to), body);
+  if (proveedor === 'twilio')  return enviarTwilio(aE164(to), body);
+  return { enviado: false, to, error: 'sms deshabilitado' };
 }
 
 async function enviarTraccar(dest, body) {
