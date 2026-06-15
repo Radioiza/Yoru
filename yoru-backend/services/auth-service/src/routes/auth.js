@@ -700,7 +700,12 @@ export default async function authRoutes(fastify) {
       return reply.code(400).send({ ok: false, error: 'Codigo incorrecto.' });
     }
 
-    publishEvent('auth.revocacion_confirmada', { userId });
+    publishEvent('auth.revocacion_confirmada', {
+      userId,
+      email: user.email,
+      telefono: user.telefono,
+      curp: user.curp,
+    });
 
     try {
       await fetch(`${TELECOM_URL}/api/telecom/lineas/by-user/${userId}/desvincular`, { method: 'POST' });

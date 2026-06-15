@@ -32,8 +32,11 @@ app.get('/notifications', async (request) => {
 
 await initSms();
 
-const ch = await connectBroker(process.env.RABBITMQ_URL);
-if (ch) await registrarConsumers();
+// Registramos los consumers SIEMPRE: subscribe() recuerda la suscripcion y la
+// re-aplica en cuanto el broker conecte (o reconecte), aunque RabbitMQ aun no
+// este listo en este momento.
+await connectBroker(process.env.RABBITMQ_URL);
+await registrarConsumers();
 
 const port = Number(process.env.PORT ?? 3005);
 const host = process.env.HOST ?? '0.0.0.0';

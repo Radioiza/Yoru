@@ -86,10 +86,18 @@ veras errores como "column email does not exist".
     a otra foto o a una imagen de archivo. La selfie original NO se
     modifica (es prueba de identidad).
   - Mis lineas: lista de telefonos vinculados a tu cuenta.
-    Boton "+ Agregar otra" para vincular un nuevo numero (NO requiere
-    repetir KYC; los documentos siguen en tu cuenta).
+    Boton "+ Agregar otra" para vincular un nuevo numero. NO repite KYC
+    (tu INE y selfie siguen en tu cuenta), pero pasa por 3 pasos de
+    seguridad:
+        1) Escribes el numero -> se envia un codigo de 5 digitos por SMS.
+        2) Ingresas el codigo SMS para confirmar que la linea es tuya.
+        3) Subes tu archivo .pem; firmamos un reto con tu llave privada
+           y el backend lo verifica contra PKI antes de vincular la linea.
+    En modo demo el codigo SMS aparece en la ventana del
+    notification-service (ver "ENVIO REAL DE SMS" mas abajo).
   - Por cada linea: "Reportar robo/perdida" (kill switch) o "Reactivar".
-  - "Revocar mi llave" -> flujo de revocacion.
+  - "Restablecer mi seguridad" (antes "Revocar mi llave") -> flujo de
+    revocacion.
 
 ------------------------------------------------------------
   4. REVOCACION DE LLAVE
@@ -200,12 +208,60 @@ Si vas a usar otro proveedor (Outlook, Resend, Ethereal), copia la
 plantilla correspondiente de:
    yoru-backend\services\notification-service\.env.example
 
-PROBLEMAS:
+PROBLEMAS (correo):
   * "Username and Password not accepted" -> generaste la app password
     pero copiaste con espacios. Quitalos. Verifica que la 2FA este activa.
   * "Mail from not allowed" -> MAIL_FROM no coincide con SMTP_USER.
   * Llega el correo pero a SPAM -> normal en demos sin SPF/DKIM. Marca
     "no es spam" o usa un dominio propio en produccion.
+
+
+================================================================
+  ENVIO REAL DE SMS (CODIGO AL AGREGAR LINEA)
+================================================================
+
+El codigo de 5 digitos que confirma una linea nueva (paso "Agregar
+otra") se manda por SMS. Por default el notification-service esta en
+modo CONSOLA: imprime el codigo en su ventana pero NO lo envia. El
+servicio NUNCA se cae por esta configuracion: si faltan datos, vuelve
+a modo consola.
+
+Para enviar SMS de verdad, elige UN proveedor con SMS_TRANSPORT en
+   yoru-backend\services\notification-service\.env
+(ver recetas completas en .env.example):
+
+  OPCION A - Traccar SMS Gateway (GRATIS, sale de TU SIM, recomendada)
+     Instala "Traccar SMS Gateway" desde Play Store en un Android con SIM.
+       SMS_TRANSPORT=traccar
+       TRACCAR_SMS_URL=http://192.168.1.50:8082/   (IP que muestra la app)
+       TRACCAR_SMS_KEY=...                          (API key de la app)
+
+  OPCION B - SMS Gateway for Android (sms-gate.app, Local Server)
+       SMS_TRANSPORT=android
+       ANDROID_SMS_URL=http://192.168.1.50:8080/message
+       ANDROID_SMS_USER=...
+       ANDROID_SMS_PASSWORD=...
+
+  OPCION C - Twilio (nube, de pago/trial)
+       SMS_TRANSPORT=twilio
+       TWILIO_ACCOUNT_SID=ACxxxx
+       TWILIO_AUTH_TOKEN=xxxx
+       TWILIO_FROM=+15555555555   (o TWILIO_MESSAGING_SERVICE_SID=MGxxxx)
+
+  COMUN:
+       SMS_COUNTRY_CODE=+52         (prefijo de pais; Mexico por defecto)
+       SMS_NUMBER_FORMAT=national   (gateways de SIM local mandan 10 digitos)
+
+IMPORTANTE: los gateways que usan tu SIM local (Traccar / Android)
+envian el SMS en formato NACIONAL (10 digitos). Muchos operadores en
+Mexico NO entregan SMS locales si el numero va como "+52..."; por eso
+SMS_NUMBER_FORMAT=national es el valor por defecto. Twilio si exige
+formato internacional (+52...) y lo aplica solo.
+
+Tras editar el .env reinicia el notification-service (cierra su
+ventana y `npm run dev`, o `python iniciar.py --stop && python
+iniciar.py`). Al arrancar veras un bloque "diagnostico de
+configuracion de SMS" indicando el proveedor activo o modo CONSOLA.
 
 
 ================================================================
@@ -276,9 +332,17 @@ PROBLEMAS:
 * "Espera Xs para reenviar" (HTTP 429)
   -> Acabas de pedir un reenvio. Espera lo que dice el contador.
 
-* No me llego el codigo
-  -> En demo el correo no se envia por SMTP real. Revisa la ventana del
-     notification-service o http://localhost:3005/notifications
+* No me llego el codigo (correo o SMS)
+  -> En demo ni el correo ni el SMS se envian de verdad. Revisa la
+     ventana del notification-service o http://localhost:3005/notifications
+     Para envio real: correo -> "ENVIO REAL DE CORREOS"; SMS al agregar
+     linea -> "ENVIO REAL DE SMS".
+
+* Los eventos/correos no salen aunque el servicio este arriba
+  -> Ya no hace falta reiniciar nada: los brokers se reconectan solos a
+     RabbitMQ cada 3s y re-aplican sus suscripciones. Si arrancaste un
+     servicio antes que RabbitMQ, espera unos segundos y veras en su
+     ventana "[broker] conectado a RabbitMQ".
 
 * Camara bloqueada
   -> Clic en el candado de la URL -> Camara -> Permitir

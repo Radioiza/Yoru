@@ -1,39 +1,74 @@
 import amqp from 'amqplib';
 
-let channel = null;
+const EXCHANGE = 'yoru.events';
+const RECONNECT_MS = 3000;
 
+let channel = null;
+let conectando = false;
+let urlGuardada = null;
+
+// Suscripciones registradas; se re-aplican tras cada reconexion.
+const suscripciones = [];
+
+/**
+ * Conecta al broker y se mantiene reconectando solo. A diferencia de la
+ * version anterior, si RabbitMQ no esta listo (o se cae despues) NO se rinde:
+ * reintenta cada pocos segundos. Asi los eventos dejan de perderse en silencio
+ * cuando el servicio arranca antes que RabbitMQ o el broker se reinicia.
+ */
 export async function connectBroker(url) {
+  urlGuardada = url ?? urlGuardada;
+  if (conectando) return channel;
+  conectando = true;
   try {
-    const conn = await amqp.connect(url);
+    const conn = await amqp.connect(urlGuardada);
+    conn.on('error', (err) => console.warn('[broker] conexion error:', err.message));
+    conn.on('close', () => {
+      console.warn(`[broker] conexion cerrada, reintentando en ${RECONNECT_MS / 1000}s…`);
+      channel = null;
+      conectando = false;
+      setTimeout(() => connectBroker(urlGuardada), RECONNECT_MS);
+    });
     channel = await conn.createChannel();
-    await channel.assertExchange('yoru.events', 'topic', { durable: true });
+    await channel.assertExchange(EXCHANGE, 'topic', { durable: true });
     console.log('[broker] conectado a RabbitMQ');
+    conectando = false;
+    for (const s of suscripciones) await aplicarSuscripcion(s);
     return channel;
   } catch (err) {
-    console.warn('[broker] no se pudo conectar:', err.message);
-    console.warn('[broker] el servicio sigue funcionando sin eventos');
+    console.warn(`[broker] no se pudo conectar: ${err.message} — reintentando en ${RECONNECT_MS / 1000}s`);
+    channel = null;
+    conectando = false;
+    setTimeout(() => connectBroker(urlGuardada), RECONNECT_MS);
     return null;
   }
 }
 
+/**
+ * Publica un evento. Devuelve true si se publico, false si el broker estaba
+ * offline. Quien llama puede decidir si avisar al usuario o registrar el fallo.
+ */
 export function publishEvent(routingKey, payload) {
   if (!channel) {
-    console.log(`[broker] (offline) evento ${routingKey}:`, payload);
-    return;
+    console.warn(`[broker] (offline) evento ${routingKey} NO publicado — sin conexion a RabbitMQ`);
+    return false;
   }
-  const body = Buffer.from(JSON.stringify(payload));
-  channel.publish('yoru.events', routingKey, body, { persistent: true });
-  console.log(`[broker] publicado ${routingKey}`);
+  try {
+    const body = Buffer.from(JSON.stringify(payload));
+    channel.publish(EXCHANGE, routingKey, body, { persistent: true });
+    console.log(`[broker] publicado ${routingKey}`);
+    return true;
+  } catch (err) {
+    console.error(`[broker] fallo publicando ${routingKey}:`, err.message);
+    return false;
+  }
 }
 
-export async function subscribe(queueName, routingKeys, handler) {
-  if (!channel) {
-    console.warn('[broker] no hay canal, no se puede suscribir.');
-    return;
-  }
+async function aplicarSuscripcion({ queueName, routingKeys, handler }) {
+  if (!channel) return;
   await channel.assertQueue(queueName, { durable: true });
   for (const key of routingKeys) {
-    await channel.bindQueue(queueName, 'yoru.events', key);
+    await channel.bindQueue(queueName, EXCHANGE, key);
   }
   channel.consume(queueName, async (msg) => {
     if (!msg) return;
@@ -47,4 +82,12 @@ export async function subscribe(queueName, routingKeys, handler) {
     }
   });
   console.log(`[broker] suscrito a ${routingKeys.join(', ')} en cola ${queueName}`);
+}
+
+export async function subscribe(queueName, routingKeys, handler) {
+  if (!suscripciones.find((s) => s.queueName === queueName)) {
+    suscripciones.push({ queueName, routingKeys, handler });
+  }
+  if (channel) await aplicarSuscripcion({ queueName, routingKeys, handler });
+  else console.warn(`[broker] sin canal aun; "${queueName}" se suscribira al reconectar.`);
 }

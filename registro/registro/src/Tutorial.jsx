@@ -12,16 +12,34 @@ const PASOS = [
     cajaTexto: 'bottom-right',
     titulo: 'Llena tu teléfono',
     descripcion: 'Escribe aquí tu número de celular (10 dígitos).',
-    porque: 'Es la línea que vamos a proteger. Solo se permite un número por persona.',
+    porque: 'Es la línea que vamos a proteger. Más adelante podrás vincular otras líneas a la misma cuenta.',
   },
   {
     mockup: 'formulario',
     target: 'curp',
     arrowSide: 'right',
-    cajaTexto: 'top-right',
+    cajaTexto: 'bottom-right',
     titulo: 'Ahora tu CURP',
     descripcion: 'Escribe los 18 caracteres de tu CURP. Las letras se pondrán en mayúsculas solas.',
     porque: 'Es como tu acta de nacimiento digital: confirma que la persona detrás del número eres tú de verdad.',
+  },
+  {
+    mockup: 'formulario',
+    target: 'email',
+    arrowSide: 'right',
+    cajaTexto: 'top-right',
+    titulo: 'Tu correo electrónico',
+    descripcion: 'Escribe un correo al que tengas acceso.',
+    porque: 'Te enviaremos un código para confirmar tu cuenta y, si algún día olvidas tu contraseña, podrás recuperarla por aquí.',
+  },
+  {
+    mockup: 'formulario',
+    target: 'password',
+    arrowSide: 'right',
+    cajaTexto: 'top-right',
+    titulo: 'Crea tu contraseña',
+    descripcion: 'Elige una contraseña segura y repítela para confirmarla.',
+    porque: 'Con tu correo y tu contraseña iniciarás sesión cada vez que entres. La verás marcada en verde cuando ambas coincidan.',
   },
   {
     mockup: 'formulario',
@@ -29,8 +47,8 @@ const PASOS = [
     arrowSide: 'above',
     cajaTexto: 'top-right',
     titulo: 'Presiona Continuar',
-    descripcion: 'Cuando los dos datos estén llenos, toca el botón morado.',
-    porque: 'Revisamos que tu teléfono y CURP estén bien escritos. Si todo está correcto, avanzamos al siguiente paso.',
+    descripcion: 'Cuando todos los datos estén llenos, toca el botón morado.',
+    porque: 'Nada se guarda todavía: solo revisamos que tus datos estén bien escritos antes de avanzar.',
   },
   {
     mockup: 'biometria',
@@ -55,18 +73,45 @@ const PASOS = [
     target: 'generarBtn',
     arrowSide: 'above',
     cajaTexto: 'top-right',
-    titulo: 'Crea tu identidad digital',
-    descripcion: 'Toca el botón para generar tu llave secreta.',
-    porque: 'La llave es como una huella digital única que solo existe en este dispositivo. Si alguien intenta usar tu cuenta desde otro teléfono, el sistema lo detecta y bloquea tu línea automáticamente.',
+    titulo: 'Genera tu identidad y guarda tu llave',
+    descripcion: 'Toca el botón. Se creará tu llave y se descargará un archivo .pem en tu dispositivo.',
+    porque: 'Ese archivo .pem es tu respaldo: lo necesitas para recuperar tu cuenta y para autorizar nuevas líneas. Guárdalo en un lugar seguro, porque la llave nunca sale de tu dispositivo.',
   },
   {
-    mockup: 'reto',
-    target: 'firmarBtn',
+    mockup: 'verificarEmail',
+    target: 'codigoEmail',
+    arrowSide: 'right',
+    cajaTexto: 'top-right',
+    titulo: 'Confirma tu correo',
+    descripcion: 'Escribe el código de 5 dígitos que te enviamos por correo.',
+    porque: 'Hasta que confirmes el código, tu cuenta no se crea de verdad. Así nos aseguramos de que el correo es tuyo.',
+  },
+  {
+    mockup: 'login',
+    target: 'loginBtn',
     arrowSide: 'above',
     cajaTexto: 'top-right',
-    titulo: 'Confirma que eres tú',
-    descripcion: 'Toca el botón para "firmar" con tu llave secreta.',
-    porque: 'En vez de escribir una contraseña que alguien podría robar, usas tu llave secreta para demostrar quién eres. Es más seguro porque la llave nunca sale de tu dispositivo.',
+    titulo: 'Inicia sesión',
+    descripcion: 'Entra con tu correo y la contraseña que creaste.',
+    porque: 'Ya con tu cuenta activa, este es el acceso normal de cada día. Si olvidas la contraseña, la recuperas con tu correo o tu archivo .pem.',
+  },
+  {
+    mockup: 'cuenta',
+    target: 'lineasSection',
+    arrowSide: 'left',
+    cajaTexto: 'top-right',
+    titulo: 'Tu panel de cuenta',
+    descripcion: 'Aquí ves todas tus líneas protegidas y su estado.',
+    porque: 'Si pierden o te roban un teléfono, toca “Reportar” para bloquear la línea al instante (kill switch). Cuando la recuperes, la reactivas tú mismo.',
+  },
+  {
+    mockup: 'agregarLinea',
+    target: 'pemUpload',
+    arrowSide: 'right',
+    cajaTexto: 'top-right',
+    titulo: 'Agrega otra línea',
+    descripcion: 'Confirma el nuevo número por SMS y sube tu archivo .pem para autorizarlo.',
+    porque: 'No repites tu INE ni tu selfie: tu llave .pem firma la solicitud y demuestra que la cuenta es tuya. Por eso es tan importante conservarla.',
   },
 ];
 
@@ -80,29 +125,47 @@ function MockupFormulario({ refs }) {
   return (
     <div className="bg-white rounded-[2.5rem] shadow-xl w-full max-w-5xl flex flex-col md:flex-row gap-8 p-8 md:p-12">
       <div className="w-full md:w-1/2">
-        <button className="text-[#bf00ff] font-bold text-sm mb-6">← Volver al inicio</button>
-        <h2 className="text-3xl font-extrabold text-[#591f96] mb-8">Ingresa tus datos</h2>
+        <button className="text-[#bf00ff] font-bold text-sm mb-4">← Volver al inicio</button>
+        <h2 className="text-3xl font-extrabold text-[#591f96] mb-1">Crear tu cuenta</h2>
+        <p className="text-[#bf00ff] text-xs mb-6">Nada se guarda hasta que confirmes el código de tu correo.</p>
 
-        <div className="flex flex-col gap-6 max-w-md">
+        <div className="flex flex-col gap-4 max-w-md">
           <div ref={refs.telefono} className="flex flex-col">
-            <label className="text-[#591f96] font-bold ml-2 mb-1">Teléfono</label>
-            <div className="w-full bg-[#f5eefe] border-[1.5px] border-[#b174e7] rounded-2xl px-6 py-4 font-semibold text-[#591f96]">
+            <label className="text-[#591f96] font-bold ml-2 text-sm">Teléfono</label>
+            <div className="w-full bg-[#f5eefe] border-[1.5px] border-[#b174e7] rounded-2xl px-6 py-3 font-semibold text-[#591f96]">
               5512345678
             </div>
           </div>
           <div ref={refs.curp} className="flex flex-col">
-            <label className="text-[#591f96] font-bold ml-2 mb-1">CURP</label>
-            <div className="w-full bg-[#f5eefe] border-[1.5px] border-[#b174e7] rounded-2xl px-6 py-4 font-semibold text-[#591f96]">
+            <label className="text-[#591f96] font-bold ml-2 text-sm">CURP</label>
+            <div className="w-full bg-[#f5eefe] border-[1.5px] border-[#b174e7] rounded-2xl px-6 py-3 font-semibold text-[#591f96]">
               GOMC900101HDFRRR01
             </div>
           </div>
-          <button ref={refs.continuarForm} className="bg-[#591f96] text-white py-4 rounded-full font-bold text-lg shadow-lg">
+          <div ref={refs.email} className="flex flex-col">
+            <label className="text-[#591f96] font-bold ml-2 text-sm">Correo electrónico</label>
+            <div className="w-full bg-[#f5eefe] border-[1.5px] border-[#b174e7] rounded-2xl px-6 py-3 font-semibold text-[#591f96]">
+              mariam@correo.com
+            </div>
+          </div>
+          <div ref={refs.password} className="flex flex-col">
+            <label className="text-[#591f96] font-bold ml-2 text-sm">Contraseña</label>
+            <div className="w-full bg-[#f5eefe] border-[1.5px] border-[#b174e7] rounded-2xl px-6 py-3 font-semibold text-[#591f96] tracking-widest">
+              ••••••••••
+            </div>
+            <label className="text-[#591f96] font-bold ml-2 text-sm mt-3">Confirmar contraseña</label>
+            <div className="w-full bg-[#f5eefe] border-[1.5px] border-[#b174e7] rounded-2xl px-6 py-3 font-semibold text-[#591f96] tracking-widest">
+              ••••••••••
+            </div>
+            <span className="text-green-600 text-xs mt-1 ml-2 font-bold">✓ Las contraseñas coinciden</span>
+          </div>
+          <button ref={refs.continuarForm} className="bg-[#591f96] text-white py-4 rounded-full font-bold text-lg shadow-lg mt-2">
             Continuar
           </button>
         </div>
       </div>
       <div className="w-full md:w-1/2 flex justify-center items-center">
-        <img src="/Tiburon.png" className="w-full max-w-[20rem]" alt="" />
+        <img src="/Tiburon.png" className="w-full max-w-[18rem]" alt="" />
       </div>
     </div>
   );
@@ -157,38 +220,150 @@ function MockupGeneracion({ refs }) {
         <span className="text-5xl">🔐</span>
       </div>
       <h2 className="text-3xl font-extrabold text-[#591f96] mb-4">Protegiendo tu Identidad</h2>
-      <p className="text-[#591f96] text-base font-medium mb-10 max-w-md">
-        Validando tu identidad y creando tu firma digital segura. Tu llave privada nunca abandonará este dispositivo.
+      <p className="text-[#591f96] text-base font-medium mb-8 max-w-md">
+        Generaremos tu par de llaves localmente y descargaremos tu archivo .pem de respaldo. Tu llave privada nunca abandonará este dispositivo.
       </p>
       <div ref={refs.generarBtn} className="bg-[#591f96] text-white py-4 px-8 rounded-full font-bold text-lg shadow-lg w-full max-w-sm">
         Generar mi Identidad Local
+      </div>
+      <div className="bg-yellow-50 border-[1.5px] border-yellow-400 rounded-2xl p-3 mt-6 w-full max-w-sm">
+        <p className="text-yellow-800 text-xs leading-snug">
+          ⚠️ Guarda tu archivo <b>.pem</b>: lo necesitas para recuperar tu cuenta y agregar líneas.
+        </p>
       </div>
     </div>
   );
 }
 
-function MockupReto({ refs }) {
+function MockupVerificarEmail({ refs }) {
   return (
     <div className="bg-white rounded-[2.5rem] shadow-xl w-full max-w-xl flex flex-col items-center text-center p-8 md:p-14">
       <div className="w-24 h-24 rounded-full bg-[#dfd0f1] flex items-center justify-center mb-6 border-[2px] border-[#b174e7]">
-        <span className="text-5xl">✍️</span>
+        <span className="text-5xl">📩</span>
       </div>
-      <h2 className="text-3xl font-extrabold text-[#591f96] mb-4">Reto de Firma Digital</h2>
-      <p className="text-[#591f96] text-base font-medium mb-8 max-w-md">
-        Vamos a comprobar que controlas tu llave privada firmando un reto único enviado por el servidor.
+      <h2 className="text-3xl font-extrabold text-[#591f96] mb-2">Confirma tu correo</h2>
+      <p className="text-[#591f96] text-base font-medium mb-1 max-w-md">
+        Enviamos un código de 5 dígitos a:
       </p>
-      <div ref={refs.firmarBtn} className="bg-[#591f96] text-white py-4 px-8 rounded-full font-bold text-lg shadow-lg w-full max-w-sm">
-        Firmar el reto
+      <p className="text-[#bf00ff] font-bold mb-6">mariam@correo.com</p>
+      <div ref={refs.codigoEmail} className="w-48 bg-[#f5eefe] border-[1.5px] border-[#b174e7] rounded-2xl px-6 py-4 font-mono text-center text-2xl tracking-widest text-[#591f96] mb-6">
+        4 2 7 1 9
+      </div>
+      <div className="flex gap-3 w-full max-w-md">
+        <div className="flex-1 py-3 rounded-full font-bold text-sm bg-white border-[1.5px] border-[#b174e7] text-[#591f96]">
+          Cancelar registro
+        </div>
+        <div className="flex-1 py-3 rounded-full font-bold text-sm bg-[#591f96] text-white shadow-lg">
+          Validar código
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MockupLogin({ refs }) {
+  return (
+    <div className="bg-white rounded-[2.5rem] shadow-xl w-full max-w-xl flex flex-col p-8 md:p-12">
+      <div className="text-center mb-8">
+        <div className="w-20 h-20 rounded-full bg-[#dfd0f1] flex items-center justify-center mx-auto mb-4 border-[2px] border-[#b174e7]">
+          <span className="text-4xl">🔓</span>
+        </div>
+        <h2 className="text-3xl font-extrabold text-[#591f96] mb-1">Iniciar sesión</h2>
+        <p className="text-[#591f96] font-medium">Usa tu correo y contraseña.</p>
+      </div>
+      <div className="flex flex-col gap-4 max-w-md mx-auto w-full">
+        <div className="flex flex-col">
+          <label className="text-[#591f96] font-bold ml-2 text-sm">Correo</label>
+          <div className="w-full bg-[#f5eefe] border-[1.5px] border-[#b174e7] rounded-2xl px-6 py-3 font-semibold text-[#591f96]">
+            mariam@correo.com
+          </div>
+        </div>
+        <div className="flex flex-col">
+          <label className="text-[#591f96] font-bold ml-2 text-sm">Contraseña</label>
+          <div className="w-full bg-[#f5eefe] border-[1.5px] border-[#b174e7] rounded-2xl px-6 py-3 font-semibold text-[#591f96] tracking-widest">
+            ••••••••••
+          </div>
+        </div>
+        <div ref={refs.loginBtn} className="bg-[#591f96] text-white py-4 rounded-full font-bold text-lg shadow-lg mt-2 text-center">
+          Iniciar sesión
+        </div>
+        <p className="text-[#bf00ff] text-sm font-bold text-center mt-1">¿Olvidaste tu contraseña o correo?</p>
+      </div>
+    </div>
+  );
+}
+
+function MockupCuenta({ refs }) {
+  return (
+    <div className="bg-white rounded-[2.5rem] shadow-xl w-full max-w-3xl p-8 md:p-12">
+      <div className="flex items-center gap-5 mb-8">
+        <div className="w-20 h-20 rounded-full bg-[#dfd0f1] border-[3px] border-[#b174e7] flex items-center justify-center text-4xl">👤</div>
+        <div>
+          <span className="inline-block bg-[#dfd0f1] text-[#3a1366] text-xs font-bold px-3 py-1 rounded-full mb-1 tracking-wider uppercase">Sesión activa</span>
+          <h2 className="text-2xl md:text-3xl font-extrabold text-[#591f96] leading-tight">Buenas tardes, Mariam</h2>
+        </div>
+      </div>
+
+      <div ref={refs.lineasSection} className="bg-white border-[1.5px] border-[#b174e7] rounded-2xl p-6">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-xl font-extrabold text-[#591f96]">Mis líneas (2)</h3>
+          <span className="text-[#bf00ff] text-xs font-bold">+ Agregar otra</span>
+        </div>
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-[#591f96] font-extrabold text-lg">5512345678</p>
+            <span className="inline-block mt-1 px-3 py-1 rounded-full text-xs font-extrabold bg-green-100 text-green-700">ACTIVA</span>
+          </div>
+          <span className="text-xs font-bold px-3 py-2 rounded-full bg-red-500 text-white">🚨 Reportar</span>
+        </div>
+        <div className="flex items-center justify-between border-t border-[#dfd0f1] pt-3 mt-3">
+          <div>
+            <p className="text-[#591f96] font-extrabold text-lg">5598765432</p>
+            <span className="inline-block mt-1 px-3 py-1 rounded-full text-xs font-extrabold bg-green-100 text-green-700">ACTIVA</span>
+          </div>
+          <span className="text-xs font-bold px-3 py-2 rounded-full bg-red-500 text-white">🚨 Reportar</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MockupAgregarLinea({ refs }) {
+  return (
+    <div className="bg-white rounded-[2.5rem] shadow-xl w-full max-w-xl flex flex-col items-center text-center p-8 md:p-14">
+      <div className="w-24 h-24 rounded-full bg-[#dfd0f1] flex items-center justify-center mb-6 border-[2px] border-[#b174e7]">
+        <span className="text-5xl">🔐</span>
+      </div>
+      <h2 className="text-3xl font-extrabold text-[#591f96] mb-4">Vincular otra línea</h2>
+      <div className="flex items-center justify-center gap-2 mb-6">
+        <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold bg-[#b174e7] text-white">✓</div>
+        <div className="w-8 h-0.5 bg-[#b174e7]" />
+        <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold bg-[#b174e7] text-white">✓</div>
+        <div className="w-8 h-0.5 bg-[#b174e7]" />
+        <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold bg-[#591f96] text-white">3</div>
+      </div>
+      <p className="text-[#591f96] text-base font-medium mb-6 max-w-md">
+        Confirmaste el número por SMS. Último paso: sube tu archivo <b>.pem</b> para autorizar con tu llave privada.
+      </p>
+      <div ref={refs.pemUpload} className="border-2 border-dashed border-[#b174e7] rounded-2xl p-8 bg-[#f5eefe] flex flex-col items-center gap-3 w-full">
+        <div className="w-16 h-16 rounded-full bg-white flex items-center justify-center border-[2px] border-[#b174e7]">
+          <span className="text-3xl">📁</span>
+        </div>
+        <p className="text-[#591f96] font-bold">Selecciona tu archivo .pem</p>
+        <p className="text-[#591f96] text-xs">Es el archivo que descargaste al registrarte</p>
       </div>
     </div>
   );
 }
 
 const MOCKUPS = {
-  formulario: MockupFormulario,
-  biometria:  MockupBiometria,
-  generacion: MockupGeneracion,
-  reto:       MockupReto,
+  formulario:     MockupFormulario,
+  biometria:      MockupBiometria,
+  generacion:     MockupGeneracion,
+  verificarEmail: MockupVerificarEmail,
+  login:          MockupLogin,
+  cuenta:         MockupCuenta,
+  agregarLinea:   MockupAgregarLinea,
 };
 
 /* ============================================================
@@ -417,7 +592,7 @@ function Bienvenida({ onEmpezar, onVolver }) {
             ¿Cómo funciona Yoru?
           </h2>
           <p className="text-[#591f96] text-base md:text-lg font-medium mb-8 max-w-md">
-            Te enseñamos paso a paso cómo proteger tu línea telefónica, mostrándote exactamente qué tocar y por qué.
+            Te enseñamos paso a paso cómo crear tu cuenta, proteger tu línea telefónica y agregar más líneas, mostrándote exactamente qué tocar y por qué.
           </p>
 
           <button
@@ -428,7 +603,7 @@ function Bienvenida({ onEmpezar, onVolver }) {
           </button>
 
           <p className="text-[#bf00ff] text-xs mt-4 font-medium">
-            Toma menos de 2 minutos · Puedes saltarlo cuando quieras
+            Toma menos de 3 minutos · Puedes saltarlo cuando quieras
           </p>
         </div>
       </main>
@@ -494,11 +669,16 @@ export default function Tutorial({ onVolver, onRegistrarse }) {
   const refs = {
     telefono:        useRef(null),
     curp:            useRef(null),
+    email:           useRef(null),
+    password:        useRef(null),
     continuarForm:   useRef(null),
     ineSection:      useRef(null),
     camaraSection:   useRef(null),
     generarBtn:      useRef(null),
-    firmarBtn:       useRef(null),
+    codigoEmail:     useRef(null),
+    loginBtn:        useRef(null),
+    lineasSection:   useRef(null),
+    pemUpload:       useRef(null),
   };
 
   const actual = paso >= 0 && paso < total ? PASOS[paso] : null;

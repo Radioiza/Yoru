@@ -152,9 +152,26 @@ automatico si alguien intenta clonar la identidad.
     se aborta con mensaje claro. Logs explicitos `[verify-email]` y
     `[by-user]` ayudan a diagnosticar si la linea no aparece.
 
-  * MULTILINEA POR USUARIO  (igual que antes)
+  * MULTILINEA POR USUARIO  CON DOBLE FACTOR (SMS + .pem)
 
-    En Mi Cuenta -> "+ Agregar otra" -> nueva linea sin repetir KYC.
+    En Mi Cuenta -> "+ Agregar otra" -> nueva linea SIN repetir KYC,
+    pero con un filtro de seguridad en 3 pasos:
+       1) El usuario escribe el numero -> se envia un codigo por SMS.
+       2) Ingresa el codigo SMS -> confirma posesion de la linea.
+       3) Sube su .pem -> firma un reto que PKI verifica contra su
+          llave publica antes de vincular definitivamente.
+    Asi la linea solo se agrega si el solicitante controla a la vez el
+    telefono nuevo (SMS) y la llave privada de la cuenta (.pem).
+
+  * BROKER RESILIENTE (RECONEXION AUTOMATICA)
+
+    Los clientes de RabbitMQ (auth y notification) ya no se rinden si
+    el broker no esta listo o se reinicia: reintentan conectar cada 3s
+    y re-aplican sus suscripciones automaticamente. publishEvent()
+    devuelve true/false segun se haya publicado, y los consumers se
+    registran SIEMPRE (subscribe recuerda la suscripcion y la re-aplica
+    al reconectar). Resultado: ya no se pierden eventos en silencio
+    cuando un servicio arranca antes que RabbitMQ.
 
 
 ================================================================
@@ -181,7 +198,10 @@ automatico si alguien intenta clonar la identidad.
     POST   /api/auth/login                   (correo + password)
     GET    /api/auth/me                      (JWT)
     GET    /api/auth/lineas                  (JWT)
-    POST   /api/auth/lineas/agregar          (JWT)
+    POST   /api/auth/lineas/verificar/iniciar   (JWT: envia codigo SMS)
+    POST   /api/auth/lineas/verificar/confirmar (JWT: valida codigo SMS)
+    POST   /api/auth/lineas/challenge           (JWT: reto a firmar con .pem)
+    POST   /api/auth/lineas/agregar             (JWT: telefono+challengeId+firma)
     POST   /api/auth/revocar/iniciar         (JWT, ahora "restablecer seguridad")
     POST   /api/auth/revocar/confirmar       (JWT)
     POST   /api/auth/recuperar/iniciar       (publico: userId del .pem)
@@ -263,17 +283,27 @@ automatico si alguien intenta clonar la identidad.
 
 ------ NOTIFICATION-SERVICE (puerto 3005) ------
 
-  - Escucha todos los eventos del bus.
+  - Escucha todos los eventos del bus. Se reconecta solo a RabbitMQ
+    (cada 3s) y re-aplica sus suscripciones, asi no pierde eventos si
+    arranca antes que el broker o este se reinicia.
   - Diagnostico al arrancar: imprime presencia del .env, valores de
     las vars SMTP (longitud del password sin mostrarlo) y verify()
-    contra el servidor SMTP si esta activado.
+    contra el servidor SMTP si esta activado. Tambien imprime un bloque
+    de diagnostico de SMS con el proveedor activo.
   - SMTP real cuando MAIL_TRANSPORT=smtp; jsonTransport en demo.
   - Solo intenta enviar correo si el destinatario es una direccion
     valida (EMAIL_REGEX).
+  - SMS reales para el codigo de "agregar linea" cuando se define
+    SMS_TRANSPORT (traccar | android | twilio); modo CONSOLA en demo.
+    Los gateways de SIM local (traccar/android) mandan en formato
+    nacional de 10 digitos (SMS_NUMBER_FORMAT=national) porque los
+    operadores en Mexico suelen rechazar el SMS local con prefijo +52.
   - Plantillas relevantes:
-      auth.email_verification       (codigo 5 digitos registro)
+      auth.email_verification       (codigo 5 digitos registro, email)
+      auth.sms_verificacion         (codigo 5 digitos agregar linea, SMS)
+      auth.password_reset_codigo    (codigo para reset de contrasena)
       auth.revocacion_codigo        (codigo 5 digitos restablecer seguridad)
-      auth.revocacion_confirmada
+      auth.revocacion_confirmada    (incluye email, telefono, curp)
       auth.user_created
       kyc.completed / kyc.rejected
       pki.key_registered / pki.new_key_attempt / pki.key_revoked
@@ -359,10 +389,15 @@ automatico si alguien intenta clonar la identidad.
   POST /auth/login { email, password } -> valida hash con scrypt
   timing-safe -> emite JWT 1h.
 
------- MULTILINEA ------
+------ MULTILINEA (AGREGAR OTRA LINEA) ------
 
-  POST /auth/lineas/agregar { telefono }  (JWT) -> vincula y activa,
-  sin repetir KYC.
+  Sin repetir KYC, pero con doble factor (SMS + .pem):
+    1. POST /auth/lineas/verificar/iniciar { telefono }  -> codigo SMS.
+    2. POST /auth/lineas/verificar/confirmar { telefono, codigo }.
+    3. POST /auth/lineas/challenge { telefono }  -> reto (nonce).
+    4. El front firma el nonce con la PRIVATE KEY del .pem.
+    5. POST /auth/lineas/agregar { telefono, challengeId, signatureB64 }
+       -> PKI verifica firma -> vincula y activa la linea.
 
 ------ RESTABLECER SEGURIDAD ------
 
