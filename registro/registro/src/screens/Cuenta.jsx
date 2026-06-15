@@ -239,7 +239,11 @@ export default function Cuenta({
             <h3 className="text-xl font-extrabold text-[#591f96]">Mis lineas ({lineas.length})</h3>
             <div className="flex gap-2">
               <button onClick={cargarLineas} disabled={cargando} className="text-[#591f96] text-xs font-bold hover:underline">🔄 Refrescar</button>
-              <button onClick={onAgregarLinea} className="text-[#bf00ff] text-xs font-bold hover:underline">+ Agregar otra</button>
+              {lineas.length < 10 ? (
+                <button onClick={onAgregarLinea} className="text-[#bf00ff] text-xs font-bold hover:underline">+ Agregar otra</button>
+              ) : (
+                <span className="text-[#a98fc4] text-xs font-bold" title="Máximo de 10 líneas por cuenta">Máx. 10 líneas</span>
+              )}
             </div>
           </div>
 

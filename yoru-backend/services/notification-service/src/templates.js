@@ -25,10 +25,10 @@ export const TEMPLATES = {
     canal: 'sms',
     severidad: 'info',
     asunto: '📲 Código para vincular tu línea Yoru',
-    cuerpo:
-      `Yoru: estas vinculando la linea ${p.telefono} a tu cuenta.\n\n` +
-      `Tu codigo de confirmacion es: ${p.codigo}\n\n` +
-      `Valido 5 minutos. Si no fuiste tu, ignora este mensaje.`,
+    // SMS de UNA sola linea corta: algunos gateways de SIM local (Traccar) no
+    // entregan mensajes largos/multilinea aunque el HTTP responda 200. Mantener
+    // el cuerpo breve (~60 chars, una linea) garantiza la entrega.
+    cuerpo: `Yoru: tu codigo para vincular tu linea es ${p.codigo}. Valido 5 min.`,
   }),
 
   'auth.password_reset_codigo': (p) => ({

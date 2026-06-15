@@ -19,6 +19,23 @@ const RESEND_COOLDOWN_S = 60;  // un reenvio por minuto
 const RECOVERY_TTL_MIN  = 10;  // ventana para usar el recoveryToken
 const SMS_TTL_MIN       = 5;   // ventana para ingresar el codigo SMS de la linea
 const RESET_PASS_TTL_MIN = 10; // ventana para el codigo de reseteo de contrasena
+const MAX_LINEAS        = 10;  // maximo de lineas por usuario EN TOTAL (incluida la principal)
+
+/**
+ * Cuenta el total de lineas committeadas de un usuario. Devuelve el numero, o
+ * null si no se pudo consultar a telecom (en cuyo caso el llamador decide no
+ * bloquear por un fallo de red).
+ */
+async function contarLineas(userId) {
+  try {
+    const r = await fetch(`${TELECOM_URL}/api/telecom/lineas/by-user/${userId}`);
+    if (!r.ok) return null;
+    const d = await r.json();
+    return Array.isArray(d.lineas) ? d.lineas.length : 0;
+  } catch {
+    return null;
+  }
+}
 
 export default async function authRoutes(fastify) {
 
@@ -492,6 +509,15 @@ export default async function authRoutes(fastify) {
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) return reply.code(404).send({ ok: false, error: 'Usuario no encontrado.' });
 
+    // Limite de lineas: no mandamos SMS si ya llego al maximo total.
+    const totalLineas = await contarLineas(userId);
+    if (totalLineas !== null && totalLineas >= MAX_LINEAS) {
+      return reply.code(409).send({
+        ok: false,
+        error: `Alcanzaste el máximo de ${MAX_LINEAS} líneas por cuenta.`,
+      });
+    }
+
     // Si el telefono ya esta vinculado a una cuenta en telecom, no seguimos.
     try {
       const ex = await fetch(`${TELECOM_URL}/api/telecom/lineas/${telefono}`);
@@ -584,6 +610,16 @@ export default async function authRoutes(fastify) {
     if (!user) return reply.code(404).send({ ok: false, error: 'Usuario no encontrado.' });
     if (!user.lineaVerifConfirmada || user.lineaVerifTelefono !== telefono) {
       return reply.code(403).send({ ok: false, error: 'Debes confirmar el código SMS primero.' });
+    }
+
+    // Re-verificar el limite aqui tambien (evita superar el maximo si se
+    // arrancaron dos flujos en paralelo).
+    const totalLineas = await contarLineas(userId);
+    if (totalLineas !== null && totalLineas >= MAX_LINEAS) {
+      return reply.code(409).send({
+        ok: false,
+        error: `Alcanzaste el máximo de ${MAX_LINEAS} líneas por cuenta.`,
+      });
     }
 
     // Validar el reto.
