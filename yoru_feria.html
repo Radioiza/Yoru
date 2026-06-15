@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Yoru — Guía de preguntas para la feria</title>
+<style>
+  @page { size: A4; margin: 16mm 14mm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Segoe UI", Arial, sans-serif;
+    color: #1f1733; font-size: 12.5px; line-height: 1.55; margin: 0;
+  }
+  h1 { font-size: 30px; color: #591f96; margin: 0 0 6px; }
+  h2 {
+    font-size: 19px; color: #ffffff; background: #591f96;
+    padding: 8px 14px; border-radius: 8px; margin: 26px 0 14px;
+  }
+  h3 { font-size: 15px; color: #591f96; margin: 18px 0 6px; border-bottom: 2px solid #e7daf7; padding-bottom: 3px; }
+  p { margin: 6px 0; }
+  .lead { color: #6b5b86; }
+  .q { font-weight: 700; color: #3a1366; margin: 12px 0 2px; }
+  .q::before { content: "P: "; color: #bf00ff; }
+  .a { margin: 0 0 8px; }
+  .a::before { content: "R: "; color: #591f96; font-weight: 700; }
+  ul { margin: 6px 0 6px 18px; padding: 0; }
+  li { margin: 3px 0; }
+  .pill { display:inline-block; background:#f0e7fb; color:#591f96; border-radius:6px; padding:1px 8px; font-size:11px; font-weight:700; }
+
+  /* Tarjeta de código estilo editor */
+  .code { background:#282a36; border:1px solid #44475a; border-radius:10px; overflow:hidden; margin:12px 0; break-inside: avoid; }
+  .code-head { background:#21222c; padding:6px 12px; font-family:Consolas,monospace; font-size:11.5px; color:#c8cce0; }
+  .dot { width:9px; height:9px; border-radius:50%; display:inline-block; margin-right:4px; vertical-align:middle; }
+  .code-head .path { color:#8be9fd; }
+  .code-head .lbl { color:#6272a4; }
+  pre { margin:0; padding:11px 14px; font-family:Consolas,"Courier New",monospace; font-size:11.5px; line-height:1.5; color:#f8f8f2; white-space:pre-wrap; word-break:break-word; }
+  .c{color:#6272a4} .s{color:#f1fa8c} .k{color:#ff79c6} .f{color:#50fa7b} .n{color:#bd93f9} .pp{color:#8be9fd}
+  .math { background:#1b1c25; border-left:4px solid #bd93f9; color:#c8cce0; font-family:Consolas,monospace; font-size:11.5px; padding:8px 12px; border-radius:0 0 10px 10px; margin-top:-12px; }
+  .math b { color:#bd93f9; }
+
+  table { width:100%; border-collapse:collapse; margin:10px 0; font-size:11.5px; break-inside:avoid; }
+  th { background:#591f96; color:#fff; text-align:left; padding:6px 8px; }
+  td { border:1px solid #e0d3f2; padding:6px 8px; vertical-align:top; }
+  tr:nth-child(even) td { background:#faf6ff; }
+
+  .box { border:1px solid #e0d3f2; border-radius:8px; padding:10px 12px; margin:8px 0; background:#faf6ff; break-inside:avoid; }
+  .diagram { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+  .node { border:1.5px solid #b174e7; border-radius:8px; padding:8px 10px; font-size:11px; min-width:120px; background:#fff; }
+  .node b { color:#591f96; display:block; font-size:12px; }
+  .node small { color:#6b5b86; }
+  .section { page-break-before: always; }
+  .cover { text-align:center; padding-top:60px; }
+  .cover .sub { font-size:15px; color:#6b5b86; margin-top:8px; }
+  .cover .tag { margin-top:22px; }
+  footer { margin-top:24px; font-size:10.5px; color:#9b8bb5; border-top:1px solid #e7daf7; padding-top:6px; }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <h1>YORU</h1>
+  <div class="sub">Identidad digital para líneas telefónicas protegida con<br>criptografía de curva elíptica <b>ECDSA&nbsp;P-256</b></div>
+  <div class="tag">
+    <span class="pill">Guía de preguntas y respuestas</span>
+    <span class="pill">Feria de proyectos</span>
+  </div>
+  <p class="lead" style="margin-top:26px;">Documento de apoyo para la defensa técnica ante maestros de<br>matemáticas, criptografía y programación. Incluye capturas de código<br>con su ruta de archivo, basadas en el código real del proyecto.</p>
+  <div class="box" style="max-width:460px;margin:30px auto;text-align:left;">
+    <b style="color:#591f96;">Contenido</b>
+    <ul>
+      <li>1. Preguntas sobre el código (programación)</li>
+      <li>2. El algoritmo ECDSA y sus procesos</li>
+      <li>3. Dónde y cómo se guardan los datos y su seguridad</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ============ SECCIÓN 1 ============ -->
+<div class="section">
+<h2>1 · Preguntas sobre el código</h2>
+<p class="lead">Arquitectura, comunicación entre servicios y decisiones de implementación.</p>
+
+<p class="q">¿Por qué microservicios y no un monolito?</p>
+<p class="a">Para aislar responsabilidades y datos: cada servicio tiene su propia base de datos (database-per-service). El servicio que guarda las llaves (PKI) está separado del que guarda las cuentas (auth); aunque comprometieran uno, no se llevan todo. Además se pueden desplegar y escalar por separado.</p>
+
+<p class="q">¿Cómo se comunican los 5 servicios entre sí?</p>
+<p class="a">De dos formas: HTTP/REST para llamadas síncronas (p. ej. auth llama a pki para verificar una firma) y <b>RabbitMQ</b> (exchange tipo <i>topic</i> <code>yoru.events</code>) para eventos asíncronos como el kill switch y las notificaciones.</p>
+
+<p class="q">¿Qué pasa si RabbitMQ o un servicio se cae?</p>
+<p class="a">Los clientes del bus se reconectan solos cada 3&nbsp;s y vuelven a registrar sus suscripciones, así no se pierden eventos en silencio si un servicio arranca antes que el broker o el broker se reinicia.</p>
+
+<p class="q">¿Cómo suben los archivos pesados (INE en PDF, selfie)?</p>
+<p class="a">Con <b>presigned URLs</b>: el backend firma una URL temporal (5&nbsp;min) y el navegador sube el archivo <b>directo a MinIO</b>, sin pasar por nuestros servidores. Ahorra ancho de banda y escala mejor. El servicio nunca toca los bytes del archivo, solo gestiona la referencia.</p>
+
+<div class="code">
+  <div class="code-head"><span class="dot" style="background:#ff5555"></span><span class="dot" style="background:#f1fa8c"></span><span class="dot" style="background:#50fa7b"></span> &nbsp;<span class="lbl">ruta:</span> <span class="path">yoru-backend/services/kyc-service/src/s3.js</span></div>
+<pre><span class="k">export async function</span> <span class="f">presignPut</span>({ key, contentType }) {
+  <span class="k">return</span> <span class="f">getSignedUrl</span>(
+    s3,
+    <span class="k">new</span> <span class="f">PutObjectCommand</span>({ Bucket: BUCKET, Key: key, ContentType: contentType }),
+    { expiresIn: <span class="n">300</span> }   <span class="c">// la URL caduca en 5 minutos</span>
+  );
+}</pre>
+</div>
+
+<p class="q">¿Cómo evitan datos huérfanos si el registro falla a medio camino?</p>
+<p class="a">El registro es <b>diferido</b>: nada se persiste en KYC/PKI/Telecom hasta que el usuario verifica su correo. Si algo falla, se hace rollback con el evento <code>auth.user_deleted</code> que los servicios consumen; además un proceso de limpieza borra los borradores no confirmados a los 30&nbsp;min.</p>
+
+<p class="q">Acaban de pedir limitar las líneas. ¿Cómo se hizo?</p>
+<p class="a">Con una validación en el backend (la fuente de verdad), aplicada <b>antes de enviar el SMS</b> y otra vez <b>antes de vincular</b> (por si se arrancan dos flujos en paralelo). El frontend además oculta el botón al llegar al tope.</p>
+
+<div class="code">
+  <div class="code-head"><span class="dot" style="background:#ff5555"></span><span class="dot" style="background:#f1fa8c"></span><span class="dot" style="background:#50fa7b"></span> &nbsp;<span class="lbl">ruta:</span> <span class="path">yoru-backend/services/auth-service/src/routes/auth.js</span></div>
+<pre><span class="k">const</span> MAX_LINEAS = <span class="n">10</span>; <span class="c">// maximo de lineas por usuario EN TOTAL</span>
+
+<span class="k">async function</span> <span class="f">contarLineas</span>(userId) {
+  <span class="k">const</span> r = <span class="k">await</span> <span class="f">fetch</span>(`${TELECOM_URL}/api/telecom/lineas/by-user/${userId}`);
+  <span class="k">if</span> (!r.ok) <span class="k">return</span> <span class="n">null</span>;
+  <span class="k">const</span> d = <span class="k">await</span> r.<span class="f">json</span>();
+  <span class="k">return</span> Array.<span class="f">isArray</span>(d.lineas) ? d.lineas.length : <span class="n">0</span>;
+}
+
+<span class="c">// en /lineas/verificar/iniciar y en /lineas/agregar:</span>
+<span class="k">const</span> totalLineas = <span class="k">await</span> <span class="f">contarLineas</span>(userId);
+<span class="k">if</span> (totalLineas !== <span class="n">null</span> &amp;&amp; totalLineas >= MAX_LINEAS) {
+  <span class="k">return</span> reply.<span class="f">code</span>(<span class="n">409</span>).<span class="f">send</span>({ ok: <span class="n">false</span>,
+    error: <span class="s">'Alcanzaste el máximo de 10 líneas por cuenta.'</span> });
+}</pre>
+</div>
+
+<p class="q">¿Web Crypto API en el navegador es seguro? ¿No es JavaScript “casero”?</p>
+<p class="a">No es casero: es la API criptográfica nativa estandarizada por la W3C, implementada por el motor del navegador. Permite además marcar las llaves como <b>no exportables</b>, justo lo que aprovechamos para que la llave privada no se pueda leer desde el código de la página.</p>
+
+<p class="q">¿Cuál es el stack?</p>
+<p class="a">Frontend: React + Vite + Tailwind. Backend: Node.js + Fastify + Prisma. Datos: PostgreSQL (uno por servicio), RabbitMQ y MinIO. Todo orquestado con Docker Compose.</p>
+</div>
+
+<!-- ============ SECCIÓN 2 ============ -->
+<div class="section">
+<h2>2 · El algoritmo ECDSA y sus procesos</h2>
+<p class="lead">ECDSA = Elliptic Curve Digital Signature Algorithm, sobre la curva P-256 (secp256r1).</p>
+
+<div class="box">
+<b>Las matemáticas en breve.</b> La curva P-256 es el conjunto de puntos <code>(x, y)</code> que cumplen
+<code>y² = x³ − 3x + b (mod p)</code> con <code>p</code> primo de 256 bits. Sus puntos forman un grupo cíclico de orden <code>n</code> con generador <code>G</code>. La operación base es la multiplicación escalar <code>k·G</code>. La seguridad viene del <b>problema del logaritmo discreto elíptico (ECDLP)</b>: dado <code>Q = d·G</code> es inviable recuperar <code>d</code>. Da ~128 bits de seguridad con llaves de solo 256 bits.
+</div>
+
+<h3>Fase 1 — Generación del par de llaves</h3>
+<div class="code">
+  <div class="code-head"><span class="dot" style="background:#ff5555"></span><span class="dot" style="background:#f1fa8c"></span><span class="dot" style="background:#50fa7b"></span> &nbsp;<span class="lbl">ruta:</span> <span class="path">registro/registro/src/screens/Generacion.jsx</span></div>
+<pre><span class="c">// Genera el par ECDSA P-256 en el navegador (Web Crypto API)</span>
+<span class="k">const</span> keyPair = <span class="k">await</span> window.crypto.subtle.<span class="f">generateKey</span>(
+  { name: <span class="s">'ECDSA'</span>, namedCurve: <span class="s">'P-256'</span> },
+  <span class="n">true</span>,              <span class="c">// exportable: para guardarlo en el .pem</span>
+  [<span class="s">'sign'</span>, <span class="s">'verify'</span>],
+);
+<span class="k">const</span> publicKeyPem  = <span class="k">await</span> <span class="f">publicKeyToPem</span>(keyPair.publicKey);   <span class="c">// SPKI</span>
+<span class="k">const</span> privateKeyPem = <span class="k">await</span> <span class="f">privateKeyToPem</span>(keyPair.privateKey); <span class="c">// PKCS8</span></pre>
+  <div class="math"><b>Matemática:</b> se elige <b>d</b> aleatorio en [1, n−1] (privada) y se calcula <b>Q = d·G</b> (pública). Solo Q se envía al servidor.</div>
+</div>
+
+<h3>Fase 2 — Firma del reto</h3>
+<div class="code">
+  <div class="code-head"><span class="dot" style="background:#ff5555"></span><span class="dot" style="background:#f1fa8c"></span><span class="dot" style="background:#50fa7b"></span> &nbsp;<span class="lbl">ruta:</span> <span class="path">registro/registro/src/api.js</span> · signWithPrivateKey()</div>
+<pre><span class="k">const</span> dataBytes = <span class="k">new</span> <span class="f">TextEncoder</span>().<span class="f">encode</span>(payload);   <span class="c">// el reto (nonce)</span>
+<span class="k">const</span> sigBuffer = <span class="k">await</span> crypto.subtle.<span class="f">sign</span>(
+  { name: <span class="s">'ECDSA'</span>, hash: <span class="s">'SHA-256'</span> },                <span class="c">// hash + firma</span>
+  privateKey,
+  dataBytes,
+);
+<span class="k">return</span> <span class="f">btoa</span>(...);  <span class="c">// firma (r, s) en base64 (formato IEEE P1363)</span></pre>
+  <div class="math"><b>Matemática:</b> e = SHA-256(m) · k aleatorio secreto · r = (k·G)ₓ mod n · <b>s = k⁻¹(e + r·d) mod n</b> · la firma es el par (r, s).</div>
+</div>
+
+<h3>Fase 3 — Verificación (servidor)</h3>
+<div class="code">
+  <div class="code-head"><span class="dot" style="background:#ff5555"></span><span class="dot" style="background:#f1fa8c"></span><span class="dot" style="background:#50fa7b"></span> &nbsp;<span class="lbl">ruta:</span> <span class="path">yoru-backend/services/pki-service/src/routes/pki.js</span></div>
+<pre><span class="k">const</span> publicKey = <span class="k">await</span> <span class="f">importPublicKeyPem</span>(key.publicKeyPem); <span class="c">// SPKI</span>
+<span class="k">const</span> sigBytes  = Buffer.<span class="f">from</span>(signatureB64, <span class="s">'base64'</span>);
+<span class="k">const</span> dataBytes = <span class="k">new</span> <span class="f">TextEncoder</span>().<span class="f">encode</span>(payload);
+
+valida = <span class="k">await</span> crypto.subtle.<span class="f">verify</span>(
+  { name: <span class="s">'ECDSA'</span>, hash: <span class="s">'SHA-256'</span> },
+  publicKey, sigBytes, dataBytes
+);</pre>
+  <div class="math"><b>Matemática:</b> w = s⁻¹ · u₁ = e·w · u₂ = r·w · (x₁,y₁) = u₁·G + u₂·Q · <b>válida si r ≡ x₁ (mod n)</b>. El servidor solo necesita la llave pública.</div>
+</div>
+
+<h3>El reto–respuesta: nonce de un solo uso (anti-replay)</h3>
+<div class="code">
+  <div class="code-head"><span class="dot" style="background:#ff5555"></span><span class="dot" style="background:#f1fa8c"></span><span class="dot" style="background:#50fa7b"></span> &nbsp;<span class="lbl">ruta:</span> <span class="path">yoru-backend/services/auth-service/src/routes/auth.js</span></div>
+<pre><span class="k">const</span> nonce = crypto.<span class="f">randomUUID</span>() + <span class="s">'.'</span> + Date.<span class="f">now</span>();
+<span class="k">const</span> expiresAt = <span class="k">new</span> <span class="f">Date</span>(Date.<span class="f">now</span>() + <span class="n">5</span> * <span class="n">60</span> * <span class="n">1000</span>); <span class="c">// 5 min</span>
+<span class="k">await</span> prisma.challenge.<span class="f">create</span>({
+  data: { userId, nonce, proposito: <span class="s">'recovery'</span>, expiresAt },
+});
+<span class="c">// al verificar la firma:</span>
+<span class="k">if</span> (challenge.usado) ...                 <span class="c">// reto de un solo uso</span>
+<span class="k">if</span> (challenge.expiresAt &lt; <span class="k">new</span> <span class="f">Date</span>()) ... <span class="c">// y con expiracion</span></pre>
+</div>
+
+<h3>Preguntas frecuentes sobre ECDSA</h3>
+<p class="q">¿Por qué 256 bits bastan si RSA necesita miles?</p>
+<p class="a">Los mejores ataques contra ECDLP son de orden √n, así que 256 bits dan ~128 bits de seguridad. RSA depende de factorización, con algoritmos sub-exponenciales mejores, por eso necesita ~3072 bits para la misma seguridad. Resultado: llaves más pequeñas y firmas más rápidas.</p>
+
+<p class="q">¿Qué papel juega el número aleatorio <code>k</code>?</p>
+<p class="a">Es efímero y secreto por firma. Si <code>k</code> se repite o se predice, se puede despejar la llave privada <code>d</code> (fue el famoso fallo de la PS3 de Sony). Por eso lo genera un RNG criptográfico; en nuestro caso lo provee Web Crypto.</p>
+
+<p class="q">¿Por qué se firma el hash y no el mensaje completo?</p>
+<p class="a">Por eficiencia y porque ECDSA opera con un entero acotado por <code>n</code>. SHA-256 da un resumen de tamaño fijo; cambiar un bit del mensaje cambia todo el hash (efecto avalancha).</p>
+
+<p class="q">¿Reto–respuesta en vez de enviar una firma fija?</p>
+<p class="a">Una firma fija sería reutilizable (replay). El servidor emite un nonce único; la firma vale solo para ese reto, es de un solo uso y caduca en 5&nbsp;min. Nunca se transmite la llave privada.</p>
+
+<p class="q">¿Qué formato de firma usan?</p>
+<p class="a">IEEE P1363 (raw <code>r‖s</code>, 64 bytes), que es lo que produce y consume Web Crypto API; lo transmitimos en base64. No es DER/ASN.1 como OpenSSL por defecto.</p>
+</div>
+
+<!-- ============ SECCIÓN 3 ============ -->
+<div class="section">
+<h2>3 · Dónde y cómo se guardan los datos (y su seguridad)</h2>
+<p class="lead">Cada microservicio tiene su propia base de datos; los archivos pesados viven en almacenamiento de objetos; la llave privada nunca toca el servidor.</p>
+
+<div class="diagram">
+  <div class="node"><b>auth-db</b><small>PostgreSQL · :5433</small><br>cuentas, contraseñas (hash), sesiones, retos</div>
+  <div class="node"><b>pki-db</b><small>PostgreSQL · :5434</small><br>llaves públicas, bitácora de firmas</div>
+  <div class="node"><b>kyc-db</b><small>PostgreSQL · :5435</small><br>referencias INE/selfie, estado KYC</div>
+  <div class="node"><b>telecom-db</b><small>PostgreSQL · :5436</small><br>líneas y eventos de línea</div>
+  <div class="node"><b>MinIO</b><small>Object storage · :9000</small><br>archivos: PDF de INE y selfie</div>
+  <div class="node"><b>RabbitMQ</b><small>Bus · :5672</small><br>eventos (efímeros)</div>
+  <div class="node" style="border-color:#bf00ff;"><b>Archivo .pem</b><small>en el dispositivo del usuario</small><br>llave privada — nunca en el servidor</div>
+</div>
+
+<table>
+  <tr><th>Dato</th><th>Dónde se guarda</th><th>Cómo / qué seguridad tiene</th></tr>
+  <tr><td>Cuenta (CURP, teléfono, correo)</td><td>auth-db (PostgreSQL :5433)</td><td>Aislada por servicio; CURP/teléfono/correo únicos.</td></tr>
+  <tr><td>Contraseña</td><td>auth-db</td><td><b>Nunca en claro</b>: scrypt + salt aleatorio de 16 bytes.</td></tr>
+  <tr><td>Llave <b>pública</b></td><td>pki-db (:5434)</td><td>Solo la pública; permite verificar, no firmar.</td></tr>
+  <tr><td>Llave <b>privada</b></td><td>Archivo .pem del usuario</td><td><b>Nunca llega al servidor</b>; se importa como no exportable.</td></tr>
+  <tr><td>Firmas (auditoría)</td><td>pki-db</td><td>Hash del payload + resultado (válida/ inválida).</td></tr>
+  <tr><td>INE (PDF) y selfie</td><td>MinIO, bucket <code>kyc-documents</code> (:9000)</td><td>El archivo va a object storage; en la BD solo la referencia.</td></tr>
+  <tr><td>Estado KYC + refs</td><td>kyc-db (:5435)</td><td>Guarda referencias, no los archivos.</td></tr>
+  <tr><td>Líneas telefónicas</td><td>telecom-db (:5436)</td><td>Estado (activa, bloqueada, kill_switched) + eventos.</td></tr>
+  <tr><td>JWT de sesión</td><td>Memoria del navegador</td><td>No en localStorage (mitiga XSS); expira en 1&nbsp;h.</td></tr>
+  <tr><td>Eventos del sistema</td><td>RabbitMQ (:5672)</td><td>Bus de mensajería; no es almacén permanente.</td></tr>
+</table>
+
+<h3>Contraseñas: scrypt + salt + comparación en tiempo constante</h3>
+<div class="code">
+  <div class="code-head"><span class="dot" style="background:#ff5555"></span><span class="dot" style="background:#f1fa8c"></span><span class="dot" style="background:#50fa7b"></span> &nbsp;<span class="lbl">ruta:</span> <span class="path">yoru-backend/services/auth-service/src/password.js</span></div>
+<pre><span class="k">export function</span> <span class="f">hashPassword</span>(plain) {
+  <span class="k">const</span> salt = crypto.<span class="f">randomBytes</span>(<span class="n">16</span>).<span class="f">toString</span>(<span class="s">'hex'</span>);        <span class="c">// salt unico</span>
+  <span class="k">const</span> hash = crypto.<span class="f">scryptSync</span>(plain, salt, <span class="n">64</span>).<span class="f">toString</span>(<span class="s">'hex'</span>);
+  <span class="k">return</span> { hash, salt };
+}
+<span class="k">export function</span> <span class="f">verifyPassword</span>(plain, hash, salt) {
+  <span class="k">const</span> test   = crypto.<span class="f">scryptSync</span>(plain, salt, <span class="n">64</span>);
+  <span class="k">const</span> stored = Buffer.<span class="f">from</span>(hash, <span class="s">'hex'</span>);
+  <span class="k">return</span> crypto.<span class="f">timingSafeEqual</span>(stored, test);   <span class="c">// tiempo constante</span>
+}</pre>
+</div>
+<ul>
+  <li><b>scrypt</b>: función de derivación lenta y con uso intensivo de memoria → encarece la fuerza bruta y los ataques con GPU.</li>
+  <li><b>Salt único</b> por usuario: dos personas con la misma contraseña tienen hashes distintos (mata las <i>rainbow tables</i>).</li>
+  <li><b>timingSafeEqual</b>: compara sin filtrar información por el tiempo de comparación (anti canal lateral).</li>
+</ul>
+
+<h3>La llave privada nunca sale del dispositivo</h3>
+<div class="code">
+  <div class="code-head"><span class="dot" style="background:#ff5555"></span><span class="dot" style="background:#f1fa8c"></span><span class="dot" style="background:#50fa7b"></span> &nbsp;<span class="lbl">ruta:</span> <span class="path">registro/registro/src/api.js</span> · importPrivateKeyFromPem()</div>
+<pre><span class="k">return</span> crypto.subtle.<span class="f">importKey</span>(
+  <span class="s">'pkcs8'</span>, der,
+  { name: <span class="s">'ECDSA'</span>, namedCurve: <span class="s">'P-256'</span> },
+  <span class="n">false</span>,        <span class="c">// extractable:false -> no se puede re-exportar</span>
+  [<span class="s">'sign'</span>],     <span class="c">// solo permiso de FIRMAR</span>
+);</pre>
+</div>
+<p class="a" style="margin-top:0;">El archivo <code>.pem</code> tiene 3 bloques: <code>YORU IDENTITY</code> (metadata), <code>PUBLIC KEY</code> (SPKI) y <code>PRIVATE KEY</code> (PKCS8). Al cargarlo, la privada se importa como no exportable y solo para firmar; por la red solo viaja la firma. Esto elimina la categoría de ataque “rompo el servidor y me llevo las llaves”.</p>
+
+<h3>Qué guarda exactamente la base de datos de cuentas</h3>
+<div class="code">
+  <div class="code-head"><span class="dot" style="background:#ff5555"></span><span class="dot" style="background:#f1fa8c"></span><span class="dot" style="background:#50fa7b"></span> &nbsp;<span class="lbl">ruta:</span> <span class="path">yoru-backend/services/auth-service/prisma/schema.prisma</span></div>
+<pre><span class="k">model</span> <span class="f">User</span> {
+  id            <span class="pp">String</span>   @id @default(uuid())
+  curp          <span class="pp">String</span>   @unique
+  telefono      <span class="pp">String</span>   @unique
+  email         <span class="pp">String</span>?  @unique
+  passwordHash  <span class="pp">String</span>?     <span class="c">// scrypt</span>
+  passwordSalt  <span class="pp">String</span>?     <span class="c">// salt aleatorio</span>
+  committed     <span class="pp">Boolean</span>  @default(false)  <span class="c">// alta real solo si true</span>
+  emailVerified <span class="pp">Boolean</span>  @default(false)
+  <span class="c">// ...codigos temporales de verificacion, recuperacion y SMS...</span>
+}</pre>
+</div>
+
+<h3>Qué guarda PKI (solo lo público) + bitácora de firmas</h3>
+<div class="code">
+  <div class="code-head"><span class="dot" style="background:#ff5555"></span><span class="dot" style="background:#f1fa8c"></span><span class="dot" style="background:#50fa7b"></span> &nbsp;<span class="lbl">ruta:</span> <span class="path">yoru-backend/services/pki-service/prisma/schema.prisma</span></div>
+<pre><span class="k">model</span> <span class="f">PublicKey</span> {
+  id           <span class="pp">String</span>  @id @default(uuid())
+  userId       <span class="pp">String</span>
+  publicKeyPem <span class="pp">String</span>  @db.Text   <span class="c">// SOLO la llave publica</span>
+  curva        <span class="pp">String</span>  @default("P-256")
+  revocada     <span class="pp">Boolean</span> @default(false)
+}
+<span class="k">model</span> <span class="f">Signature</span> {        <span class="c">// auditoria de cada verificacion</span>
+  payloadHash  <span class="pp">String</span>          <span class="c">// hash SHA-256 del payload</span>
+  resultado    <span class="pp">String</span>          <span class="c">// valida | invalida</span>
+}</pre>
+</div>
+
+<h3>Almacenamiento de archivos (MinIO) y su acceso</h3>
+<div class="code">
+  <div class="code-head"><span class="dot" style="background:#ff5555"></span><span class="dot" style="background:#f1fa8c"></span><span class="dot" style="background:#50fa7b"></span> &nbsp;<span class="lbl">ruta:</span> <span class="path">yoru-backend/services/kyc-service/src/s3.js</span></div>
+<pre><span class="k">export const</span> s3 = <span class="k">new</span> <span class="f">S3Client</span>({
+  endpoint: <span class="s">'http://localhost:9000'</span>,        <span class="c">// MinIO (S3-compatible)</span>
+  credentials: { accessKeyId: ..., secretAccessKey: ... },
+  forcePathStyle: <span class="n">true</span>,
+});
+<span class="c">// El INE (PDF) y la selfie se suben con presigned URL directo a MinIO;</span>
+<span class="c">// en la base de datos KYC solo se guarda la referencia (key), no el archivo.</span></pre>
+</div>
+
+<h3>Resumen de seguridad</h3>
+<ul>
+  <li>Llave privada client-side, no exportable, nunca viaja por la red.</li>
+  <li>Reto–respuesta con nonce de un solo uso (anti-replay), expira en 5&nbsp;min.</li>
+  <li>Firmas ECDSA P-256 verificadas en el servidor, con bitácora de cada intento.</li>
+  <li>Contraseñas con scrypt + salt y comparación en tiempo constante.</li>
+  <li>JWT HS256 (1&nbsp;h) con autorización por dueño: no puedes tocar recursos ajenos aunque tengas token.</li>
+  <li>Kill switch automático ante intento de registrar una segunda llave.</li>
+  <li>Database-per-service + comunicación por eventos + CORS restringido a la app.</li>
+</ul>
+
+<div class="box">
+<b>Honestidad técnica (limitaciones de demo).</b> KYC se auto-aprueba sin matching facial real; no hay API Gateway ni rate limiting global; los secretos de los <code>.env</code> son de demo (irían a un secret manager); faltan tests automatizados. La criptografía (ECDSA, scrypt, JWT) sí es estándar y real.
+</div>
+
+<footer>Yoru — Guía de preguntas para la feria de proyectos · Generado a partir del código real del repositorio.</footer>
+</div>
+
+</body>
+</html>
