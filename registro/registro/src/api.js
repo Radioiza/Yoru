@@ -80,11 +80,11 @@ export const api = {
   borrarUsuario: ({ userId }) => deleteJSON(`${AUTH}/api/auth/users/${userId}`),
 
   // ===== KYC =====
-  obtenerPresignedUrls: ({ userId }) => postJSON(`${KYC}/api/kyc/presigned-urls`, { userId }),
+  obtenerPresignedUrls: ({ userId, curp }) => postJSON(`${KYC}/api/kyc/presigned-urls`, { userId, curp }),
   verKyc:               ({ userId }) => getJSON(`${KYC}/api/kyc/requests/${userId}`),
 
-  fotoPerfilUploadUrl: ({ userId, contentType }) =>
-    postJSON(`${KYC}/api/kyc/foto-perfil/presigned-url`, { userId, contentType }),
+  fotoPerfilUploadUrl: ({ userId, curp, contentType }) =>
+    postJSON(`${KYC}/api/kyc/foto-perfil/presigned-url`, { userId, curp, contentType }),
   guardarFotoPerfil: ({ userId, refFotoPerfilS3 }) =>
     postJSON(`${KYC}/api/kyc/foto-perfil`, { userId, refFotoPerfilS3 }),
   fotoPerfilUrl: ({ userId }) => getJSON(`${KYC}/api/kyc/foto-perfil/${userId}`),

@@ -1,6 +1,6 @@
 import { prisma } from '../prisma.js';
 import { publishEvent } from '../broker.js';
-import { presignPut, presignGet, deleteObject } from '../s3.js';
+import { presignPut, presignGet, deleteUsuarioObjetos } from '../s3.js';
 
 export default async function kycRoutes(fastify) {
 
@@ -13,12 +13,15 @@ export default async function kycRoutes(fastify) {
 
   // POST /api/kyc/presigned-urls
   fastify.post('/presigned-urls', async (request, reply) => {
-    const { userId } = request.body ?? {};
+    const { userId, curp } = request.body ?? {};
     if (!userId) return reply.code(400).send({ ok: false, error: 'userId requerido.' });
 
+    // La carpeta del usuario se nombra con su CURP (legible). Si no llega el
+    // curp, caemos al userId para no romper. Sanitizamos a alfanumerico.
+    const carpeta = String(curp || userId).replace(/[^A-Za-z0-9]/g, '') || userId;
     const stamp = Date.now();
-    const ineKey    = `ine/${userId}/${stamp}-ine.pdf`;
-    const selfieKey = `selfies/${userId}/${stamp}-selfie.jpg`;
+    const ineKey    = `ine/${carpeta}/${stamp}-ine.pdf`;
+    const selfieKey = `selfies/${carpeta}/${stamp}-selfie.jpg`;
 
     try {
       const [ineUploadUrl, selfieUploadUrl] = await Promise.all([
@@ -42,11 +45,12 @@ export default async function kycRoutes(fastify) {
   // POST /api/kyc/foto-perfil/presigned-url
   // URL para subir SOLO la foto de perfil (no la selfie original).
   fastify.post('/foto-perfil/presigned-url', async (request, reply) => {
-    const { userId, contentType = 'image/jpeg' } = request.body ?? {};
+    const { userId, curp, contentType = 'image/jpeg' } = request.body ?? {};
     if (!userId) return reply.code(400).send({ ok: false, error: 'userId requerido.' });
 
+    const carpeta = String(curp || userId).replace(/[^A-Za-z0-9]/g, '') || userId;
     const ext = contentType === 'image/png' ? 'png' : 'jpg';
-    const key = `foto-perfil/${userId}/${Date.now()}-perfil.${ext}`;
+    const key = `foto-perfil/${carpeta}/${Date.now()}-perfil.${ext}`;
 
     try {
       const url = await presignPut({ key, contentType });
@@ -187,12 +191,12 @@ export default async function kycRoutes(fastify) {
     const req = await prisma.kycRequest.findUnique({ where: { userId } });
     if (!req) return { ok: true, borrado: 0 };
 
-    // Intentamos borrar los archivos en MinIO. Si falla, seguimos.
-    for (const key of [req.refIneS3, req.refSelfieS3, req.refFotoPerfilS3]) {
-      if (!key) continue;
-      try { await deleteObject(key); } catch (err) {
-        request.log.warn({ err, key }, 'no pude borrar objeto S3');
-      }
+    // Borra TODA la carpeta del usuario en MinIO (no solo las refs guardadas).
+    try {
+      const n = await deleteUsuarioObjetos([req.refIneS3, req.refSelfieS3, req.refFotoPerfilS3]);
+      request.log.info({ userId, objetos: n }, 'objetos MinIO del usuario borrados');
+    } catch (err) {
+      request.log.warn({ err, userId }, 'no pude borrar objetos S3 del usuario');
     }
 
     await prisma.kycRequest.delete({ where: { userId } });

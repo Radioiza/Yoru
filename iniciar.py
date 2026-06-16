@@ -72,6 +72,16 @@ PRISMA_STUDIO_PORTS = {
     "telecom-service": 5558,
 }
 
+# ===================== MINIO (object storage S3) =====================
+# Credenciales y configuracion del almacenamiento de objetos donde se guardan
+# las INE (PDF) y selfies. Deben coincidir con docker-compose.yml (MINIO_ROOT_*)
+# y con lo que espera el kyc-service (S3_*).
+MINIO_ROOT_USER    = "yoru"
+MINIO_ROOT_PASS    = "yoru_dev_minio"
+MINIO_BUCKET       = "kyc-documents"
+MINIO_API_PORT     = 9000
+MINIO_CONSOLE_PORT = 9001
+
 
 # ===================== COLORES =====================
 class C:
@@ -198,6 +208,82 @@ def levantar_docker():
         p(C.GREEN, "    [OK] MinIO listo en puerto 9000")
 
     return True
+
+
+def colocar_credenciales_minio():
+    """Asegura que el kyc-service tenga las credenciales de MinIO en su .env.
+
+    El .env esta en .gitignore, asi que en un clon nuevo no existe y el servicio
+    caeria en valores por defecto. Aqui 'colocamos' las credenciales: creamos el
+    .env desde .env.example si falta, o le agregamos el bloque S3 si no lo tiene.
+    Esto corre ANTES del setup de prisma (que tambien necesita DATABASE_URL del .env).
+    """
+    kyc_dir  = SERVICES_DIR / "kyc-service"
+    env_file = kyc_dir / ".env"
+    example  = kyc_dir / ".env.example"
+
+    bloque_s3 = (
+        f"S3_ENDPOINT=http://localhost:{MINIO_API_PORT}\n"
+        f"S3_BUCKET={MINIO_BUCKET}\n"
+        f"S3_ACCESS_KEY={MINIO_ROOT_USER}\n"
+        f"S3_SECRET_KEY={MINIO_ROOT_PASS}\n"
+    )
+
+    if env_file.exists():
+        contenido = env_file.read_text(encoding="utf-8", errors="ignore")
+        if "S3_ACCESS_KEY" in contenido:
+            p(C.GREEN, "  [OK]  kyc-service/.env ya tiene credenciales de MinIO")
+        else:
+            env_file.write_text(
+                contenido.rstrip() + "\n\n# MinIO (agregado por iniciar.py)\n" + bloque_s3,
+                encoding="utf-8",
+            )
+            p(C.GREEN, "  [OK]  credenciales de MinIO agregadas a kyc-service/.env")
+        return
+
+    if example.exists():
+        env_file.write_text(example.read_text(encoding="utf-8", errors="ignore"), encoding="utf-8")
+        p(C.GREEN, "  [OK]  kyc-service/.env creado desde .env.example (credenciales MinIO colocadas)")
+    else:
+        env_file.write_text(
+            'DATABASE_URL="postgresql://yoru:yoru_dev@localhost:5435/kyc?schema=public"\n'
+            'RABBITMQ_URL="amqp://yoru:yoru_dev@localhost:5672"\n'
+            "PORT=3003\nHOST=0.0.0.0\n\n# MinIO (S3-compatible)\n" + bloque_s3,
+            encoding="utf-8",
+        )
+        p(C.GREEN, "  [OK]  kyc-service/.env creado con credenciales de MinIO")
+
+
+def inicializar_bucket_minio():
+    """Crea el bucket de MinIO si no existe, con el cliente `mc` en un contenedor
+    efimero. Idempotente (mb --ignore-existing) y best-effort: si algo falla, el
+    kyc-service crea igualmente el bucket al arrancar (bootstrapBucket).
+    Usa host.docker.internal para alcanzar el MinIO publicado en el host.
+    """
+    p(C.BLUE, "  Inicializando bucket de MinIO...")
+    mc = (
+        f"mc alias set yoru http://host.docker.internal:{MINIO_API_PORT} "
+        f"{MINIO_ROOT_USER} {MINIO_ROOT_PASS} && "
+        f"mc mb --ignore-existing yoru/{MINIO_BUCKET}"
+    )
+    r = subprocess.run(
+        f'docker run --rm minio/mc sh -c "{mc}"',
+        shell=True, capture_output=True, text=True,
+    )
+    if r.returncode == 0:
+        p(C.GREEN, f"    [OK] bucket '{MINIO_BUCKET}' listo en MinIO")
+    else:
+        p(C.YELLOW, "    [!] mc no pudo crear el bucket (lo creara el kyc-service al arrancar).")
+        ultima = (r.stderr or r.stdout or "").strip().splitlines()
+        if ultima:
+            p(C.YELLOW, f"        {ultima[-1][:120]}")
+
+
+def inicializar_minio():
+    """Coloca las credenciales de MinIO y deja el bucket listo."""
+    p(C.BLUE, "\nConfigurando MinIO (credenciales + bucket)...")
+    colocar_credenciales_minio()
+    inicializar_bucket_minio()
 
 
 def setup_servicio(nombre, tiene_bd):
@@ -361,7 +447,7 @@ def imprimir_resumen(no_browser):
         ("telecom-service",      "http://localhost:3004"),
         ("notification-service", "http://localhost:3005"),
         ("RabbitMQ UI",          "http://localhost:15672"),
-        ("MinIO UI",             "http://localhost:9001"),
+        ("MinIO UI",             f"http://localhost:{MINIO_CONSOLE_PORT}"),
     ]
     ancho = max(len(n) for n, _ in items)
     for nombre, url in items:
@@ -378,7 +464,8 @@ def imprimir_resumen(no_browser):
     print()
     p(C.YELLOW, "Credenciales para las UIs externas:")
     p(C.YELLOW, "  RabbitMQ:  yoru / yoru_dev")
-    p(C.YELLOW, "  MinIO:     yoru / yoru_dev_minio")
+    p(C.YELLOW, f"  MinIO:     {MINIO_ROOT_USER} / {MINIO_ROOT_PASS}")
+    p(C.YELLOW, f"             consola http://localhost:{MINIO_CONSOLE_PORT}  ->  bucket '{MINIO_BUCKET}' (INE y selfies)")
     p(C.YELLOW, "  (Prisma Studio no pide credenciales)")
     print()
     p(C.PURPLE, "Para detener todo:  python iniciar.py --stop")
@@ -440,6 +527,10 @@ def main():
     p(C.BLUE, "\n[2/5] Levantando infraestructura...")
     if not levantar_docker():
         sys.exit(1)
+
+    # MinIO: colocar credenciales en el kyc-service y crear el bucket.
+    # Va aqui (despues de levantar MinIO, antes del setup de prisma).
+    inicializar_minio()
 
     # ----- PASO 3: setup microservicios + frontend -----
     p(C.BLUE, "\n[3/5] Preparando microservicios (la primera vez tarda mas)...")

@@ -113,7 +113,7 @@ export default async function authRoutes(fastify) {
       const r = await fetch(`${KYC_URL}/api/kyc/presigned-urls`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id }),
+        body: JSON.stringify({ userId: user.id, curp: curpUpper }),
       });
       urls = await r.json();
       if (!r.ok || !urls.ok) throw new Error(urls.error ?? 'No presigned URLs.');

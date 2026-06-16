@@ -124,7 +124,7 @@ export default function Cuenta({
   const subirFotoPerfil = async (blobOFile, contentType) => {
     setCargando(true);
     try {
-      const u = await api.fotoPerfilUploadUrl({ userId: user.id, contentType });
+      const u = await api.fotoPerfilUploadUrl({ userId: user.id, curp: user.curp, contentType });
       if (u.status !== 200 || !u.data.ok) throw new Error(u.data.error ?? 'No URL');
       await uploadToPresignedUrl(u.data.uploadUrl, blobOFile, contentType);
       const g = await api.guardarFotoPerfil({ userId: user.id, refFotoPerfilS3: u.data.key });
